@@ -1,1 +1,28 @@
+# Worktrees directory
 .worktrees/
+
+# Build artifacts
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.userprefs
+*.sln.iml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# NuGet
+.nuget/
+*.nupkg
+*.snupkg
+
+# OS
+.DS_Store
+Thumbs.db
