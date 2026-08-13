@@ -1,6 +1,7 @@
 ﻿using System;
 using VbaStudio.Core.Excel;
 using Excel = Microsoft.Office.Interop.Excel;
+// tlbimp generates VBE interop types directly in namespace VBIDE, not Microsoft.Vbe.Interop; aliasing fails with CS0234
 using VBIDE;
 
 namespace VbaStudio.Spike;
