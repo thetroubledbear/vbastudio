@@ -2,5 +2,5 @@ Attribute VB_Name = "modLiterals"
 Option Explicit
 
 Public Function FrenchGreeting() As String
-    FrenchGreeting = "CafÃ©, Ã  bientÃ´t"
+    FrenchGreeting = "Café, à bientôt"
 End Function
