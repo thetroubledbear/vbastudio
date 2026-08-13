@@ -25,4 +25,8 @@
     <ProjectReference Include="..\VbaStudio.Core\VbaStudio.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

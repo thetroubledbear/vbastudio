@@ -1,5 +1,8 @@
 ﻿using System;
+using System.IO.Abstractions;
 using VbaStudio.Core.Excel;
+using VbaStudio.Core.Sync;
+using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
 // tlbimp generates VBE interop types directly in namespace VBIDE, not Microsoft.Vbe.Interop; aliasing fails with CS0234
 using VBIDE;
@@ -14,12 +17,35 @@ internal class Program
         ExcelMessageFilter.Register();
         try
         {
-            RunSpike();
+            if (args.Length > 0 && args[0] == "synctest")
+            {
+                RunSyncTest();
+            }
+            else
+            {
+                RunSpike();
+            }
         }
         finally
         {
             ExcelMessageFilter.Revoke();
         }
+    }
+
+    private static void RunSyncTest()
+    {
+        var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
+        var project = excel.ActiveWorkbook.VBProject;
+        var access = new ExcelVbaProjectAccess(project);
+        var sync = new SyncEngine(access, new FileSystem(), "src");
+
+        Console.WriteLine("Pull #1...");
+        sync.Pull();
+        Console.WriteLine("Push (unchanged files)...");
+        sync.Push();
+        Console.WriteLine("Pull #2...");
+        sync.Pull();
+        Console.WriteLine("Done. Diff the 'src' directory between runs with git or a hash tool to confirm byte-identical output.");
     }
 
     private static void RunSpike()
