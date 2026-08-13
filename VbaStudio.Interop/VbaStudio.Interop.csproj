@@ -2,11 +2,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VbaStudio.Core\VbaStudio.Core.csproj" />
-    <ProjectReference Include="..\VbaStudio.Interop\VbaStudio.Interop.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
