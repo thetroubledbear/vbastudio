@@ -94,4 +94,21 @@ public class VbaSourceTextTests
 
         Assert.Equal(exported, result);
     }
+
+    [Fact]
+    public void RemoveHeaderAttributeLines_NoAttributeLines_ReturnsUnchanged()
+    {
+        var lines = new[] { "Sub Foo()", "End Sub" };
+        var result = VbaSourceText.RemoveHeaderAttributeLines(lines);
+        Assert.Equal(lines, result);
+    }
+
+    [Fact]
+    public void TrimExtraLeadingBlankLine_NoAttributeLines_ReturnsUnchanged()
+    {
+        var original = new[] { "Sub Foo()", "End Sub" };
+        var exported = new[] { "Sub Foo()", "", "End Sub" };
+        var result = VbaSourceText.TrimExtraLeadingBlankLine(original, exported);
+        Assert.Equal(exported, result);
+    }
 }

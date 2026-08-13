@@ -10,6 +10,13 @@ public static class VbaSourceText
         int nonAttributeLines = lines
             .TakeWhile(line => !line.StartsWith("Attribute", StringComparison.Ordinal))
             .Count();
+
+        // Guard: if no attribute line found, return unchanged (fail-safe)
+        if (nonAttributeLines == lines.Length)
+        {
+            return lines;
+        }
+
         int attributeLines = lines.Skip(nonAttributeLines)
             .TakeWhile(line => line.StartsWith("Attribute", StringComparison.Ordinal))
             .Count();
@@ -25,6 +32,13 @@ public static class VbaSourceText
         int nonAttributeLines = exportedLines
             .TakeWhile(line => !line.StartsWith("Attribute", StringComparison.Ordinal))
             .Count();
+
+        // Guard: if no attribute line found, return unchanged (fail-safe)
+        if (nonAttributeLines == exportedLines.Length)
+        {
+            return exportedLines;
+        }
+
         int attributeLines = exportedLines.Skip(nonAttributeLines)
             .TakeWhile(line => line.StartsWith("Attribute", StringComparison.Ordinal))
             .Count();
