@@ -1,3 +1,5 @@
 *.frx binary
 *.bas text eol=crlf working-tree-encoding=windows-1252
 *.cls text eol=crlf working-tree-encoding=windows-1252
+# ModuleWithGreekFrenchLiterals.bas contains Greek characters (Καλημέρα) that require UTF-8
+VbaStudio.Tests/TestData/ModuleWithGreekFrenchLiterals.bas text eol=crlf working-tree-encoding=UTF-8

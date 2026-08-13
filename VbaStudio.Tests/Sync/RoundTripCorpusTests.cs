@@ -29,7 +29,10 @@ public class RoundTripCorpusTests
     public void PullPushPull_IsByteIdentical_Twice(string fileName, string moduleName, ModuleKind kind)
     {
         var extension = Path.GetExtension(fileName);
-        var encoding = kind == ModuleKind.Document ? Encoding.UTF8 : Encoding.GetEncoding(1252);
+        // ModuleWithGreekFrenchLiterals.bas contains non-1252 characters (Greek) and must be read as UTF-8
+        var encoding = (kind == ModuleKind.Document || Path.GetFileNameWithoutExtension(fileName) == "ModuleWithGreekFrenchLiterals")
+            ? Encoding.UTF8
+            : Encoding.GetEncoding(1252);
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "TestData", fileName);
         var code = File.ReadAllText(sourcePath, encoding);
 
