@@ -100,4 +100,19 @@ public class SyncEngineTests
         Assert.Equal(1, fake.WriteCallCount);
         Assert.Contains("changed", fake.ReadAll().Single().Code);
     }
+
+    [Fact]
+    public void Push_IgnoresUnrecognizedExtensions()
+    {
+        var fake = new FakeVbaProjectAccess();
+        var fs = new MockFileSystem();
+        fs.AddFile("src/UserFormMain.frx", new MockFileData(new byte[] { 0x01, 0x02 }));
+        fs.AddFile("src/.gitattributes", new MockFileData("*.frx binary"));
+        var sync = new SyncEngine(fake, fs, "src");
+
+        var exception = Record.Exception(() => sync.Push());
+
+        Assert.Null(exception);
+        Assert.Equal(0, fake.WriteCallCount);
+    }
 }

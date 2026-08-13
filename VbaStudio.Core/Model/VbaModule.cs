@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 
 namespace VbaStudio.Core.Model;
 
@@ -19,6 +20,12 @@ public static class ModuleKindExtensions
         ModuleKind.UserForm => ".frm",
         ModuleKind.Document => ".cls",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
+
+    public static Encoding SourceEncoding(this ModuleKind kind) => kind switch
+    {
+        ModuleKind.Document => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        _ => Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ReplacementFallback)
     };
 }
 

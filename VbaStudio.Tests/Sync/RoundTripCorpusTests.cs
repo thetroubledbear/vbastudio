@@ -29,7 +29,7 @@ public class RoundTripCorpusTests
     public void PullPushPull_IsByteIdentical_Twice(string fileName, string moduleName, ModuleKind kind)
     {
         var extension = Path.GetExtension(fileName);
-        var encoding = kind == ModuleKind.Document ? Encoding.UTF8 : Encoding.GetEncoding(1252);
+        var encoding = kind.SourceEncoding();
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "TestData", fileName);
         var code = File.ReadAllText(sourcePath, encoding);
 
@@ -41,10 +41,23 @@ public class RoundTripCorpusTests
         sync.Pull();
         var first = fs.File.ReadAllBytes(fs.Path.Combine("src", moduleName + extension));
 
+        Assert.Equal(code, encoding.GetString(first));
+
         sync.Push();
         sync.Pull();
         var second = fs.File.ReadAllBytes(fs.Path.Combine("src", moduleName + extension));
 
         Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void Pull_NonCp1252Character_ThrowsInsteadOfSilentlyCorrupting()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modGreek", ModuleKind.Standard, "Attribute VB_Name = \"modGreek\"\r\nPublic Const Greeting As String = \"Καλημέρα\"", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+
+        Assert.Throws<EncoderFallbackException>(() => sync.Pull());
     }
 }

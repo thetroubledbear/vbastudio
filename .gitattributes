@@ -1,5 +1,4 @@
 *.frx binary
 *.bas text eol=crlf working-tree-encoding=windows-1252
-*.cls text eol=crlf working-tree-encoding=windows-1252
-# Document modules (sheets, forms) are stored as UTF-8 per design
-VbaStudio.Tests/TestData/SheetDocumentModule.cls text eol=crlf working-tree-encoding=UTF-8
+*.cls text eol=crlf
+*.frm text eol=crlf working-tree-encoding=windows-1252

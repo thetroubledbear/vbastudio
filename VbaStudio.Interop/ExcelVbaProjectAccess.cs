@@ -2,8 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
 using VbaStudio.Core.Excel;
 using VbaStudio.Core.Model;
 
@@ -11,8 +9,6 @@ namespace VbaStudio.Interop;
 
 public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
 {
-    private static readonly Encoding VbaEncoding = Encoding.GetEncoding(1252);
-
     private readonly VBIDE.VBProject _project;
 
     public ExcelVbaProjectAccess(VBIDE.VBProject project)
@@ -34,7 +30,12 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
             {
                 try
                 {
-                    result.Add(ReadComponent(component));
+                    if (Enum.IsDefined(typeof(ModuleKind), (int)component.Type))
+                    {
+                        result.Add(ReadComponent(component));
+                    }
+                    // else: component type not modeled by ModuleKind (e.g. ActiveXDesigner) - skip it,
+                    // don't let one unusual component abort the whole project's sync.
                 }
                 finally
                 {
@@ -80,7 +81,7 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
     {
         var tempPath = Path.Combine(Path.GetTempPath(), component.Name + kind.FileExtension());
         component.Export(tempPath);
-        var rawLines = File.ReadAllLines(tempPath, VbaEncoding);
+        var rawLines = File.ReadAllLines(tempPath, kind.SourceEncoding());
         File.Delete(tempPath);
 
         if (kind == ModuleKind.UserForm)
@@ -185,7 +186,7 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
     private void ImportFromTempFile(VbaModule module)
     {
         var tempPath = Path.Combine(Path.GetTempPath(), module.Name + module.FileExtension);
-        File.WriteAllText(tempPath, module.Code, VbaEncoding);
+        File.WriteAllText(tempPath, module.Code, module.Kind.SourceEncoding());
         var components = _project.VBComponents;
         try
         {

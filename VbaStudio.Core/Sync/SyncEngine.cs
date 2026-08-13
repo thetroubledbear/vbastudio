@@ -10,7 +10,7 @@ namespace VbaStudio.Core.Sync;
 
 public sealed class SyncEngine
 {
-    private static readonly Encoding VbaEncoding = Encoding.GetEncoding(1252);
+    private static readonly HashSet<string> SyncedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".bas", ".cls", ".frm" };
 
     private readonly IVbaProjectAccess _access;
     private readonly IFileSystem _fileSystem;
@@ -33,7 +33,7 @@ public sealed class SyncEngine
         foreach (var module in _access.ReadAll())
         {
             var path = _fileSystem.Path.Combine(_srcDir, module.FileName);
-            var encoding = module.Kind == ModuleKind.Document ? Encoding.UTF8 : VbaEncoding;
+            var encoding = module.Kind.SourceEncoding();
             _fileSystem.File.WriteAllText(path, module.Code, encoding);
         }
     }
@@ -55,12 +55,17 @@ public sealed class SyncEngine
 
         foreach (var path in _fileSystem.Directory.EnumerateFiles(_srcDir))
         {
-            var name = _fileSystem.Path.GetFileNameWithoutExtension(path);
             var extension = _fileSystem.Path.GetExtension(path);
+            if (!SyncedExtensions.Contains(extension))
+            {
+                continue;
+            }
+
+            var name = _fileSystem.Path.GetFileNameWithoutExtension(path);
             var kind = existingByName.TryGetValue(name, out var current)
                 ? current.Kind
                 : InferKindFromExtension(extension);
-            var encoding = kind == ModuleKind.Document ? Encoding.UTF8 : VbaEncoding;
+            var encoding = kind.SourceEncoding();
             var code = _fileSystem.File.ReadAllText(path, encoding);
 
             if (existingByName.TryGetValue(name, out var unchanged) && unchanged.Code == code)
