@@ -32,8 +32,14 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
         {
             foreach (VBIDE.VBComponent component in components)
             {
-                result.Add(ReadComponent(component));
-                ComRelease.Release(component);
+                try
+                {
+                    result.Add(ReadComponent(component));
+                }
+                finally
+                {
+                    ComRelease.Release(component);
+                }
             }
         }
         finally
@@ -161,7 +167,15 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
         var existing = FindComponent(module.Name);
         if (existing != null)
         {
-            _project.VBComponents.Remove(existing);
+            var components = _project.VBComponents;
+            try
+            {
+                components.Remove(existing);
+            }
+            finally
+            {
+                ComRelease.Release(components);
+            }
             ComRelease.Release(existing);
         }
 
@@ -172,8 +186,16 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
     {
         var tempPath = Path.Combine(Path.GetTempPath(), module.Name + module.FileExtension);
         File.WriteAllText(tempPath, module.Code, VbaEncoding);
-        var imported = _project.VBComponents.Import(tempPath);
-        ComRelease.Release(imported);
+        var components = _project.VBComponents;
+        try
+        {
+            var imported = components.Import(tempPath);
+            ComRelease.Release(imported);
+        }
+        finally
+        {
+            ComRelease.Release(components);
+        }
         File.Delete(tempPath);
     }
 
