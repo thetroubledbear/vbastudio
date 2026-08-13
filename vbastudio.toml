@@ -1,0 +1,15 @@
+[project]
+workbook = "C:/CHANGE_ME/YourWorkbook.xlsm"
+src = "src"
+codepage = "windows-1252"
+
+[run]
+entry = "modMain.Main"
+close_dialogs = true
+
+[debug]
+shadow = "build/shadow.xlsm"
+port = 8731
+receive_timeout_ms = 3600000
+max_string_len = 512
+max_array_elements = 100

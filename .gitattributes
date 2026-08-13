@@ -1,0 +1,3 @@
+*.frx binary
+*.bas text eol=crlf working-tree-encoding=windows-1252
+*.cls text eol=crlf working-tree-encoding=windows-1252
