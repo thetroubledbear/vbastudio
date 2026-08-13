@@ -58,6 +58,20 @@ public class SyncEngineTests
     }
 
     [Fact]
+    public void Push_SrcDirMissing_CreatesDirectoryAndReturnsWithoutThrowing()
+    {
+        var fake = new FakeVbaProjectAccess();
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+
+        var exception = Record.Exception(() => sync.Push());
+
+        Assert.Null(exception);
+        Assert.True(fs.Directory.Exists("src"));
+        Assert.Equal(0, fake.WriteCallCount);
+    }
+
+    [Fact]
     public void Push_UnchangedContent_DoesNotCallWrite()
     {
         var fake = new FakeVbaProjectAccess();

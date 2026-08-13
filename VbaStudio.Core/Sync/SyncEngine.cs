@@ -45,6 +45,12 @@ public sealed class SyncEngine
             throw new InvalidOperationException("Refusing to push: a macro is currently running.");
         }
 
+        if (!_fileSystem.Directory.Exists(_srcDir))
+        {
+            _fileSystem.Directory.CreateDirectory(_srcDir);
+            return;
+        }
+
         var existingByName = _access.ReadAll().ToDictionary(m => m.Name);
 
         foreach (var path in _fileSystem.Directory.EnumerateFiles(_srcDir))
