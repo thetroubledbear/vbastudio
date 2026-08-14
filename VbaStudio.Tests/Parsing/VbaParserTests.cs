@@ -439,4 +439,109 @@ public class VbaParserTests
 
         Assert.Empty(result.Procedures.Single().Locals);
     }
+
+    [Fact]
+    public void ParseModule_ModuleLevelDimDeclaration_ProducesModuleVariable()
+    {
+        var source = "Option Explicit\r\n" +
+                      "Dim counter As Long\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var moduleVar = Assert.Single(result.ModuleVariables);
+        Assert.Equal("counter", moduleVar.Name);
+        Assert.Equal(SymbolKind.ModuleVariable, moduleVar.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_ModuleLevelPublicDeclaration_NoDimKeywordNeeded()
+    {
+        var source = "Public sharedTotal As Long\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var moduleVar = Assert.Single(result.ModuleVariables);
+        Assert.Equal("sharedTotal", moduleVar.Name);
+        Assert.Equal(SymbolKind.ModuleVariable, moduleVar.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_ModuleLevelPrivateConst_ProducesKindConst()
+    {
+        var source = "Private Const MaxRetries As Long = 3\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var moduleVar = Assert.Single(result.ModuleVariables);
+        Assert.Equal("MaxRetries", moduleVar.Name);
+        Assert.Equal(SymbolKind.Const, moduleVar.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_ModuleLevelBareConst_DefaultsPrivateButStillKindConst()
+    {
+        var source = "Const Pi As Double = 3.14159\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var moduleVar = Assert.Single(result.ModuleVariables);
+        Assert.Equal("Pi", moduleVar.Name);
+        Assert.Equal(SymbolKind.Const, moduleVar.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_MultipleModuleVariables_AllCollected()
+    {
+        var source = "Dim a As Long\r\n" +
+                      "Private b As String\r\n" +
+                      "Public c As Boolean\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        Assert.Equal(3, result.ModuleVariables.Count);
+        Assert.Contains(result.ModuleVariables, s => s.Name == "a");
+        Assert.Contains(result.ModuleVariables, s => s.Name == "b");
+        Assert.Contains(result.ModuleVariables, s => s.Name == "c");
+    }
+
+    [Fact]
+    public void ParseModule_DeclarationsInsideProcedureBody_AreNotCountedAsModuleVariables()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim local1 As Long\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        Assert.Empty(result.ModuleVariables);
+        Assert.Single(result.Procedures.Single().Locals);
+    }
+
+    [Fact]
+    public void ParseModule_NoModuleLevelVariables_ReturnsEmptyList()
+    {
+        var source = "Option Explicit\r\n" +
+                      "\r\n" +
+                      "Public Sub DoWork()\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        Assert.Empty(result.ModuleVariables);
+    }
 }

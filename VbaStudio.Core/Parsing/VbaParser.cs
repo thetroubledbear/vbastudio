@@ -22,6 +22,7 @@ public static class VbaParser
         var clean = joined.Select(j => CommentStripper.StripComment(j.Text)).ToList();
 
         var procedures = new List<ProcedureSymbols>();
+        var inProcedureLine = new bool[joined.Count];
         var i = 0;
 
         while (i < joined.Count)
@@ -57,6 +58,11 @@ public static class VbaParser
                 locals.AddRange(ParseDeclarationLine(clean[bodyIndex], ProcedureDeclarationPattern, SymbolKind.Local));
             }
 
+            for (var markIndex = i; markIndex <= j && markIndex < joined.Count; markIndex++)
+            {
+                inProcedureLine[markIndex] = true;
+            }
+
             procedures.Add(new ProcedureSymbols(
                 name,
                 kind,
@@ -68,7 +74,18 @@ public static class VbaParser
             i = j + 1;
         }
 
-        return new ModuleSymbols(moduleName, System.Array.Empty<Symbol>(), procedures);
+        var moduleVariables = new List<Symbol>();
+        for (var lineIndex = 0; lineIndex < joined.Count; lineIndex++)
+        {
+            if (inProcedureLine[lineIndex])
+            {
+                continue;
+            }
+
+            moduleVariables.AddRange(ParseModuleDeclarationLine(clean[lineIndex]));
+        }
+
+        return new ModuleSymbols(moduleName, moduleVariables, procedures);
     }
 
     private static ProcedureKind ParseProcedureKind(string rawKind)
@@ -149,6 +166,51 @@ public static class VbaParser
     private static readonly Regex ProcedureDeclarationPattern = new(
         @"^\s*(?<kw>Dim|Static|Const)\s+(?<rest>.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ModuleConstWithVisibilityPattern = new(
+        @"^\s*(?:Public|Private|Global)\s+Const\s+(?<rest>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ModuleConstBarePattern = new(
+        @"^\s*Const\s+(?<rest>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ModuleDimPattern = new(
+        @"^\s*Dim\s+(?<rest>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ModuleVisibilityOnlyPattern = new(
+        @"^\s*(?:Public|Private|Global)\s+(?<rest>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static IReadOnlyList<Symbol> ParseModuleDeclarationLine(string line)
+    {
+        var constWithVisibility = ModuleConstWithVisibilityPattern.Match(line);
+        if (constWithVisibility.Success)
+        {
+            return ParseDeclaredVariables(constWithVisibility.Groups["rest"].Value, SymbolKind.Const);
+        }
+
+        var constBare = ModuleConstBarePattern.Match(line);
+        if (constBare.Success)
+        {
+            return ParseDeclaredVariables(constBare.Groups["rest"].Value, SymbolKind.Const);
+        }
+
+        var dim = ModuleDimPattern.Match(line);
+        if (dim.Success)
+        {
+            return ParseDeclaredVariables(dim.Groups["rest"].Value, SymbolKind.ModuleVariable);
+        }
+
+        var visibilityOnly = ModuleVisibilityOnlyPattern.Match(line);
+        if (visibilityOnly.Success)
+        {
+            return ParseDeclaredVariables(visibilityOnly.Groups["rest"].Value, SymbolKind.ModuleVariable);
+        }
+
+        return System.Array.Empty<Symbol>();
+    }
 
     private static readonly Regex DeclaredVariablePattern = new(
         @"^\s*(?<name>\w+)\s*(?<array>\(\s*[\w,\s]*\s*\))?\s*(?:As\s+(?<type>[\w.]+))?\s*(?:=.*)?$",
