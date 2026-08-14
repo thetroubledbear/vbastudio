@@ -170,7 +170,7 @@ public class VbaParserTests
     }
 
     [Fact]
-    public void ParseModule_EveryProcedure_HasEmptyParametersAndLocalsForNow()
+    public void ParseModule_EveryProcedure_HasEmptyLocalsForNow()
     {
         var source = "Public Sub DoWork(a As Long)\r\n" +
                       "    Dim x As Long\r\n" +
@@ -179,7 +179,130 @@ public class VbaParserTests
         var result = VbaParser.ParseModule(source, "modWork");
 
         var proc = Assert.Single(result.Procedures);
-        Assert.Empty(proc.Parameters);
+        Assert.NotEmpty(proc.Parameters);
         Assert.Empty(proc.Locals);
+    }
+
+    [Fact]
+    public void ParseModule_SimpleParameter_DefaultsToByRefAndVariantWhenUntyped()
+    {
+        var source = "Public Sub DoWork(x)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.Equal("x", param.Name);
+        Assert.Equal("Variant", param.DeclaredType);
+        Assert.Equal(SymbolKind.Parameter, param.Kind);
+        Assert.Equal("ByRef", param.PassingMode);
+        Assert.False(param.IsOptional);
+        Assert.False(param.IsArray);
+    }
+
+    [Fact]
+    public void ParseModule_TypedByValParameter_ParsesCorrectly()
+    {
+        var source = "Public Sub DoWork(ByVal count As Long)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.Equal("count", param.Name);
+        Assert.Equal("Long", param.DeclaredType);
+        Assert.Equal("ByVal", param.PassingMode);
+    }
+
+    [Fact]
+    public void ParseModule_OptionalParameterWithDefaultValue_SetsIsOptionalTrue()
+    {
+        var source = "Public Sub DoWork(Optional x As Long = 5)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.Equal("x", param.Name);
+        Assert.True(param.IsOptional);
+        Assert.Equal("Long", param.DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_OptionalParameterWithoutDefaultValue_SetsIsOptionalTrue()
+    {
+        var source = "Public Sub DoWork(Optional label As String)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.True(param.IsOptional);
+    }
+
+    [Fact]
+    public void ParseModule_ParamArrayParameter_SetsArrayTrueAndPassingModeNull()
+    {
+        var source = "Public Sub DoWork(ParamArray items() As Variant)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.Equal("items", param.Name);
+        Assert.True(param.IsArray);
+        Assert.Null(param.PassingMode);
+        Assert.False(param.IsOptional);
+    }
+
+    [Fact]
+    public void ParseModule_ArrayParameter_SetsIsArrayTrue()
+    {
+        var source = "Public Sub DoWork(values() As Long)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var param = Assert.Single(result.Procedures.Single().Parameters);
+        Assert.Equal("values", param.Name);
+        Assert.True(param.IsArray);
+        Assert.Equal("Long", param.DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_MultipleParameters_AllParsedInOrder()
+    {
+        var source = "Public Sub DoWork(a As Long, ByVal b As String, Optional c As Boolean = False)\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var parameters = result.Procedures.Single().Parameters;
+        Assert.Equal(3, parameters.Count);
+        Assert.Equal("a", parameters[0].Name);
+        Assert.Equal("b", parameters[1].Name);
+        Assert.Equal("ByVal", parameters[1].PassingMode);
+        Assert.Equal("c", parameters[2].Name);
+        Assert.True(parameters[2].IsOptional);
+    }
+
+    [Fact]
+    public void ParseModule_NoParameters_ReturnsEmptyParametersList()
+    {
+        var source = "Public Sub DoWork()\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        Assert.Empty(result.Procedures.Single().Parameters);
+    }
+
+    [Fact]
+    public void ParseModule_ContinuedParameterList_ParsesAllParametersWithCorrectPhysicalLines()
+    {
+        var source = "Public Sub DoWork(a As Long, _\r\n" +
+                      "    b As String)\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var proc = result.Procedures.Single();
+        Assert.Equal(2, proc.Parameters.Count);
+        Assert.Equal("a", proc.Parameters[0].Name);
+        Assert.Equal("b", proc.Parameters[1].Name);
+        Assert.Equal(1, proc.StartLine);
+        Assert.Equal(3, proc.EndLine);
     }
 }

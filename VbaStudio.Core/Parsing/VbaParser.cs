@@ -55,7 +55,7 @@ public static class VbaParser
                 kind,
                 startLine,
                 endLine,
-                Parameters: System.Array.Empty<Symbol>(),
+                Parameters: ParseParameters(headerMatch.Groups["params"].Value),
                 Locals: System.Array.Empty<Symbol>()));
 
             i = j + 1;
@@ -87,5 +87,83 @@ public static class VbaParser
         }
 
         return lines;
+    }
+
+    private static readonly Regex ParameterPattern = new(
+        @"^\s*(?:(?<optional>Optional)\s+)?(?:(?<passing>ByRef|ByVal)\s+)?(?:(?<paramarray>ParamArray)\s+)?(?<name>\w+)\s*(?<array>\(\s*\))?\s*(?:As\s+(?<type>[\w.]+))?\s*(?:=.*)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static IReadOnlyList<Symbol> ParseParameters(string rawParams)
+    {
+        if (string.IsNullOrWhiteSpace(rawParams))
+        {
+            return System.Array.Empty<Symbol>();
+        }
+
+        var results = new List<Symbol>();
+        foreach (var segment in SplitTopLevel(rawParams, ','))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            var match = ParameterPattern.Match(trimmed);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var isParamArray = match.Groups["paramarray"].Success;
+            var isArray = match.Groups["array"].Success || isParamArray;
+            var declaredType = match.Groups["type"].Success ? match.Groups["type"].Value : "Variant";
+            string? passingMode = isParamArray
+                ? null
+                : match.Groups["passing"].Success
+                    ? NormalizeKeyword(match.Groups["passing"].Value)
+                    : "ByRef";
+
+            results.Add(new Symbol(
+                match.Groups["name"].Value,
+                declaredType,
+                SymbolKind.Parameter,
+                isArray,
+                IsOptional: match.Groups["optional"].Success,
+                passingMode));
+        }
+
+        return results;
+    }
+
+    private static string NormalizeKeyword(string raw) =>
+        raw.Equals("ByVal", System.StringComparison.OrdinalIgnoreCase) ? "ByVal" : "ByRef";
+
+    private static IReadOnlyList<string> SplitTopLevel(string text, char separator)
+    {
+        var parts = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth--;
+            }
+            else if (c == separator && depth == 0)
+            {
+                parts.Add(text.Substring(start, i - start));
+                start = i + 1;
+            }
+        }
+
+        parts.Add(text.Substring(start));
+        return parts;
     }
 }
