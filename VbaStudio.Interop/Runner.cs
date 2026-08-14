@@ -35,6 +35,7 @@ public sealed class Runner
     public RunResult Run(string entryPoint)
     {
         EnsureTargetProjectIsActive();
+        EnsureProjectIsInDesignMode();
 
         // There is no reliable side-effect-free compile check via automation in this VBE version.
         // Two approaches were tried and both failed against real Excel:
@@ -70,6 +71,13 @@ public sealed class Runner
                 runException = ex;
             }
         });
+
+        // Checked regardless of outcome: a stuck break-mode state after a failure is exactly what
+        // let today's crashes cascade (a second Run() call, chained onto a project VBE never
+        // finished recovering from). This does not fix that state - VBProject.Mode has no
+        // documented setter to force one - but a caller ignoring the warning is now ignoring a
+        // clear signal, not walking into a silent trap.
+        LogIfNotBackInDesignMode();
 
         if (captured != null && captured.Caption == VbaErrorCaption)
         {
@@ -184,6 +192,36 @@ public sealed class Runner
         finally
         {
             ComRelease.Release(activeProject);
+        }
+    }
+
+    /// <summary>
+    /// Refuses to start a run while the project is mid-execution or paused in break mode from a
+    /// prior call - the exact precondition Rubberduck's own test runner checks before running
+    /// anything (VBProject.Mode, a documented Microsoft.Vbe.Interop property; not the reverse-
+    /// engineered internals their execution engine itself needs). Chaining a second Run() onto a
+    /// project VBE never finished recovering from is what turned today's failures into crashes.
+    /// </summary>
+    private void EnsureProjectIsInDesignMode()
+    {
+        var mode = _project.Mode;
+        if (mode != vbext_VBAMode.vbext_vm_Design)
+        {
+            throw new InvalidOperationException(
+                $"The target VBA project '{_project.Name}' is not in design mode (current mode: {mode}). " +
+                "It is likely still mid-execution or paused in break mode from a prior failure - reset it " +
+                "in Excel (Run > Reset, or close and reopen the workbook) before running again.");
+        }
+    }
+
+    private void LogIfNotBackInDesignMode()
+    {
+        var mode = _project.Mode;
+        if (mode != vbext_VBAMode.vbext_vm_Design)
+        {
+            _log?.Invoke(
+                $"Runner: project '{_project.Name}' did not return to design mode after Run() " +
+                $"(current mode: {mode}). The next call may fail or crash Excel until this is reset by hand.");
         }
     }
 }
