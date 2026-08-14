@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.Linq;
 using System.Text.RegularExpressions;
+using VbaStudio.Core.Model;
 
 namespace VbaStudio.Core.Parsing;
 
 public static class VbaParser
 {
     private static readonly Regex ProcedureHeaderPattern = new(
-        @"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?<kind>Sub|Function|Property\s+Get|Property\s+Let|Property\s+Set)\s+(?<name>\w+)\s*\((?<params>(?:[^()]|\(\))*)\)(?:\s+As\s+\w+(?:\(\))?)?\s*$",
+        @"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?<kind>Sub|Function|Property\s+Get|Property\s+Let|Property\s+Set)\s+(?<name>\w+)\s*\((?<params>(?:[^()]|\(\))*)\)(?:\s+As\s+[\w.]+(?:\(\))?)?\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ProcedureEndPattern = new(
@@ -18,17 +19,25 @@ public static class VbaParser
 
     public static ModuleSymbols ParseModule(string sourceText, string moduleName)
     {
+        // Comments must be stripped from each physical line BEFORE continuation-joining, not after:
+        // VBA disallows continuing a comment across lines, so a comment whose text happens to end in
+        // " _" must not be allowed to make LineJoiner swallow the next physical line into it.
         var physicalLines = SplitPhysicalLines(sourceText);
-        var joined = LineJoiner.Join(physicalLines);
-        var clean = joined.Select(j => CommentStripper.StripComment(j.Text)).ToList();
+        var strippedLines = physicalLines.Select(CommentStripper.StripComment).ToList();
+        var joined = LineJoiner.Join(strippedLines);
 
         var procedures = new List<ProcedureSymbols>();
+
+        // Tracks, per joined line, whether it falls inside a detected procedure's range. Module-level
+        // declaration scanning below is defined as the set-complement of this array ("every line NOT
+        // inside a procedure"), not "every line before the first procedure" — so declarations that
+        // appear between or after procedures are still picked up correctly.
         var inProcedureLine = new bool[joined.Count];
         var i = 0;
 
         while (i < joined.Count)
         {
-            var headerMatch = ProcedureHeaderPattern.Match(clean[i]);
+            var headerMatch = ProcedureHeaderPattern.Match(joined[i].Text);
             if (!headerMatch.Success)
             {
                 i++;
@@ -45,7 +54,7 @@ public static class VbaParser
             while (j < joined.Count)
             {
                 endLine = joined[j].EndPhysicalLine;
-                if (ProcedureEndPattern.IsMatch(clean[j]))
+                if (ProcedureEndPattern.IsMatch(joined[j].Text))
                 {
                     break;
                 }
@@ -56,7 +65,7 @@ public static class VbaParser
             var locals = new List<Symbol>();
             for (var bodyIndex = bodyStart; bodyIndex < j && bodyIndex < joined.Count; bodyIndex++)
             {
-                locals.AddRange(ParseDeclarationLine(clean[bodyIndex], ProcedureDeclarationPattern, SymbolKind.Local));
+                locals.AddRange(ParseDeclarationLine(joined[bodyIndex].Text, ProcedureDeclarationPattern, SymbolKind.Local));
             }
 
             for (var markIndex = i; markIndex <= j && markIndex < joined.Count; markIndex++)
@@ -83,7 +92,7 @@ public static class VbaParser
                 continue;
             }
 
-            moduleVariables.AddRange(ParseModuleDeclarationLine(clean[lineIndex]));
+            moduleVariables.AddRange(ParseModuleDeclarationLine(joined[lineIndex].Text));
         }
 
         return new ModuleSymbols(moduleName, moduleVariables, procedures);
@@ -143,6 +152,9 @@ public static class VbaParser
             var isParamArray = match.Groups["paramarray"].Success;
             var isArray = match.Groups["array"].Success || isParamArray;
             var declaredType = match.Groups["type"].Success ? match.Groups["type"].Value : "Variant";
+
+            // VBA disallows ByRef/ByVal on ParamArray, so PassingMode is forced to null rather than
+            // defaulting to "ByRef" for it.
             string? passingMode = isParamArray
                 ? null
                 : match.Groups["passing"].Success
@@ -168,6 +180,10 @@ public static class VbaParser
         @"^\s*(?<kw>Dim|Static|Const)\s+(?<rest>.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // These four module-level patterns are tried in this exact order in ParseModuleDeclarationLine:
+    // Const-with-visibility and bare Const must be checked before the bare-visibility fallback, or a
+    // line like "Private Const Max = 100" would be misclassified as a plain ModuleVariable with a
+    // garbled "rest" (the word "Const" itself would end up captured as part of the declaration text).
     private static readonly Regex ModuleConstWithVisibilityPattern = new(
         @"^\s*(?:Public|Private|Global)\s+Const\s+(?<rest>.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -213,8 +229,10 @@ public static class VbaParser
         return System.Array.Empty<Symbol>();
     }
 
+    // Optional "WithEvents" precedes the name (module-level only, but harmless for locals);
+    // optional "New" precedes the type name for "As New Type" declarations — neither is captured.
     private static readonly Regex DeclaredVariablePattern = new(
-        @"^\s*(?<name>\w+)\s*(?<array>\(\s*[\w,\s]*\s*\))?\s*(?:As\s+(?<type>[\w.]+))?\s*(?:=.*)?$",
+        @"^\s*(?:WithEvents\s+)?(?<name>\w+)\s*(?<array>\(\s*[\w,\s]*\s*\))?\s*(?:As\s+(?:New\s+)?(?<type>[\w.]+))?\s*(?:=.*)?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static IReadOnlyList<Symbol> ParseDeclarationLine(string line, Regex declarationPattern, SymbolKind nonConstKind)
@@ -262,6 +280,8 @@ public static class VbaParser
         return results;
     }
 
+    // Paren-depth-aware because a declaration or parameter list can contain array-size parens
+    // (e.g. "arr(10, 20)") whose internal commas must not be treated as top-level separators.
     private static IReadOnlyList<string> SplitTopLevel(string text, char separator)
     {
         var parts = new List<string>();
@@ -290,24 +310,35 @@ public static class VbaParser
         return parts;
     }
 
-    private static readonly string[] SourceSubfolders = { "Modules", "Classes", "Forms", "Sheets" };
+    // Same four kinds SyncEngine's own AllKinds writes back to disk — keeps folder/extension/encoding
+    // handling for reading a project in lockstep with how SyncEngine writes one.
+    private static readonly ModuleKind[] AllKinds =
+    {
+        ModuleKind.Standard, ModuleKind.Class, ModuleKind.UserForm, ModuleKind.Document
+    };
 
     public static IReadOnlyList<ModuleSymbols> ParseProject(IFileSystem fileSystem, string srcDir)
     {
         var results = new List<ModuleSymbols>();
 
-        foreach (var subfolder in SourceSubfolders)
+        foreach (var kind in AllKinds)
         {
-            var folder = fileSystem.Path.Combine(srcDir, subfolder);
+            var folder = fileSystem.Path.Combine(srcDir, kind.SourceFolder());
             if (!fileSystem.Directory.Exists(folder))
             {
                 continue;
             }
 
+            var extension = kind.FileExtension();
             foreach (var path in fileSystem.Directory.EnumerateFiles(folder))
             {
+                if (!fileSystem.Path.GetExtension(path).Equals(extension, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 var moduleName = fileSystem.Path.GetFileNameWithoutExtension(path);
-                var sourceText = fileSystem.File.ReadAllText(path);
+                var sourceText = fileSystem.File.ReadAllText(path, kind.SourceEncoding());
                 results.Add(ParseModule(sourceText, moduleName));
             }
         }
