@@ -174,4 +174,27 @@ public class InstrumenterTests
         Assert.DoesNotContain("ignored As Long\r\nAgent.Probe", result.InstrumentedSource);
         Assert.DoesNotContain("alsoIgnored As Long\r\nAgent.Probe", result.InstrumentedSource);
     }
+
+    [Fact]
+    public void Instrument_CommentEndingInUnderscore_DoesNotFalselyTriggerContinuation()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    x = 1 ' comment ending in _\r\n" +
+                      "    y = 2\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        // Two independent statements, two probes - not merged into one.
+        Assert.Equal(2, result.ProbeSites.Count);
+        Assert.Equal(2, result.ProbeSites[0].OriginalLine);
+        Assert.Equal(3, result.ProbeSites[1].OriginalLine);
+        // The real comment survives in the output, unmodified.
+        Assert.Contains("x = 1 ' comment ending in _", result.InstrumentedSource);
+        // "y = 2" must NOT have been swallowed into the comment - it must appear as its own
+        // real (uncommented) statement, immediately preceded by its own probe line.
+        Assert.Contains("Agent.Probe 2, Array()\r\n    y = 2", result.InstrumentedSource);
+    }
 }

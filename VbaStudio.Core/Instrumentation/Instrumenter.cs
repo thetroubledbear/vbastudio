@@ -1,6 +1,7 @@
 // VbaStudio.Core/Instrumentation/Instrumenter.cs
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using VbaStudio.Core.Parsing;
 
@@ -31,7 +32,7 @@ public static class Instrumenter
         // each joined line as the atomic probe-placement unit therefore satisfies the instrument
         // component's "never split a continuation" and "never split a single-line If" rules for
         // free - there is never a sub-line position for a probe to land on.
-        var joined = LineJoiner.Join(bodySlice);
+        var joined = JoinPreservingComments(bodySlice);
 
         var probeArgs = BuildProbeArgs(procedure);
         var probeSites = new List<ProbeSite>();
@@ -60,6 +61,48 @@ public static class Instrumenter
         outputLines.AddRange(physicalLines.Skip(procedure.EndLine));
 
         return new InstrumentResult(string.Join("\r\n", outputLines), probeSites, currentId);
+    }
+
+    // LineJoiner.Join decides whether to merge a line with its successor purely by checking
+    // whether the line's trimmed text ends in " _" - it has no concept of comments. If a
+    // comment's text happens to end in " _", joining on the RAW line would incorrectly merge
+    // the next real statement into the comment, silently deleting it from the instrumented
+    // output. This computes the join GROUPING from a comment-stripped view (so a comment's
+    // trailing " _" can never trigger a false join), then reconstructs each group's text from
+    // the ORIGINAL, comment-intact lines - so real comments are preserved in the instrumented
+    // source exactly as written, never stripped.
+    private static IReadOnlyList<JoinedLine> JoinPreservingComments(IReadOnlyList<string> rawLines)
+    {
+        var strippedLines = rawLines.Select(CommentStripper.StripComment).ToList();
+        var groups = LineJoiner.Join(strippedLines);
+
+        var result = new List<JoinedLine>();
+        foreach (var group in groups)
+        {
+            var rangeLines = rawLines
+                .Skip(group.StartPhysicalLine - 1)
+                .Take(group.EndPhysicalLine - group.StartPhysicalLine + 1)
+                .ToList();
+
+            var sb = new StringBuilder();
+            for (var i = 0; i < rangeLines.Count; i++)
+            {
+                if (i < rangeLines.Count - 1)
+                {
+                    var trimmedEnd = rangeLines[i].TrimEnd();
+                    sb.Append(trimmedEnd, 0, trimmedEnd.Length - 2);
+                    sb.Append(' ');
+                }
+                else
+                {
+                    sb.Append(rangeLines[i]);
+                }
+            }
+
+            result.Add(new JoinedLine(sb.ToString(), group.StartPhysicalLine, group.EndPhysicalLine));
+        }
+
+        return result;
     }
 
     private static string BuildProbeArgs(ProcedureSymbols procedure)
