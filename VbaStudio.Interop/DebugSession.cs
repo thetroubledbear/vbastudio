@@ -50,7 +50,7 @@ public sealed class DebugSession
 
         var agentPath = Path.Combine("vba", "modAgent.bas");
         var agentSource = File.ReadAllText(agentPath, Encoding.GetEncoding(1252));
-        var agentModule = new VbaModule("modAgent", ModuleKind.Standard, agentSource, ".bas");
+        var agentModule = new VbaModule("Agent", ModuleKind.Standard, agentSource, ".bas");
         access.Write(agentModule);
 
         var probeSites = instrumentResult.ProbeSites.ToDictionary(site => site.ProbeId);

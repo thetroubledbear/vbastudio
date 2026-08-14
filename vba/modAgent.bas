@@ -1,5 +1,5 @@
 ' vba/modAgent.bas
-Attribute VB_Name = "modAgent"
+Attribute VB_Name = "Agent"
 Option Explicit
 
 Private Const AGENT_PORT As Long = 8731
