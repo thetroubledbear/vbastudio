@@ -11,7 +11,12 @@ public sealed record TestCase(string ModuleName, string ProcedureName)
 
 public static class TestDiscovery
 {
-    private static readonly string[] SourceSubfolders = { "Classes", "Modules" };
+    // Standard modules only. Runner.Run() invokes tests through Application.Run, which can only
+    // reach procedures in standard (or document) modules - a Public Sub in a class module has no
+    // addressable instance and cannot be run as a macro by name. Discovering a test under
+    // src/Classes would therefore always produce a misleading "macro not available" failure that
+    // has nothing to do with what the test actually asserts.
+    private static readonly string[] SourceSubfolders = { "Modules" };
 
     private static readonly Regex TestFileNamePattern =
         new(@"Tests\.(cls|bas)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);

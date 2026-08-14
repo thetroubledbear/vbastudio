@@ -108,15 +108,23 @@ internal class Program
             return;
         }
 
-        Console.WriteLine($"Discovered {tests.Count} test(s).");
+        Console.WriteLine($"Discovered {tests.Count} test(s) (from src/ on disk - Push first if you've edited them).");
 
         var results = testRunner.RunAll(tests);
 
         var passed = 0;
         var failed = 0;
+        var skipped = 0;
         foreach (var result in results)
         {
-            if (result.Passed)
+            if (result.Skipped)
+            {
+                // Never ran - Runner's preconditions refused it (project stuck out of design mode).
+                // Not a red assertion, so it must not inflate the failure count.
+                skipped++;
+                Console.WriteLine($"SKIP {result.Test.QualifiedName}: {result.FailureMessage}");
+            }
+            else if (result.Passed)
             {
                 passed++;
                 Console.WriteLine($"PASS {result.Test.QualifiedName} ({result.Duration.TotalMilliseconds:F0}ms)");
@@ -128,7 +136,7 @@ internal class Program
             }
         }
 
-        Console.WriteLine($"{passed} passed, {failed} failed, {results.Count} total");
+        Console.WriteLine($"{passed} passed, {failed} failed, {skipped} skipped, {results.Count} total");
     }
 
     private static void RunSpike()

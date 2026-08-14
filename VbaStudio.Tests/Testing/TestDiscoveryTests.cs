@@ -10,7 +10,9 @@ public class TestDiscoveryTests
     public void DiscoverTests_FindsTestProceduresInMatchingClsFile()
     {
         var fs = new MockFileSystem();
-        fs.AddFile("src/Classes/modMathTests.cls", new MockFileData(
+        // Only src/Modules is scanned (Application.Run cannot invoke class-module procedures), but
+        // the file-name pattern still accepts a .cls extension - that half of the regex is covered here.
+        fs.AddFile("src/Modules/modMathTests.cls", new MockFileData(
             "Option Explicit\r\n" +
             "\r\n" +
             "Public Sub Test_AddsTwoNumbers()\r\n" +
@@ -66,7 +68,7 @@ public class TestDiscoveryTests
     public void DiscoverTests_IgnoresNonTestProceduresInATestsFile()
     {
         var fs = new MockFileSystem();
-        fs.AddFile("src/Classes/modMathTests.cls", new MockFileData(
+        fs.AddFile("src/Modules/modMathTests.bas", new MockFileData(
             "Public Sub Test_RealTest()\r\n" +
             "    Dim asserter As New clsAssert\r\n" +
             "    asserter.IsTrue True\r\n" +
@@ -88,7 +90,7 @@ public class TestDiscoveryTests
     public void DiscoverTests_IgnoresTestProcedureWithParameters()
     {
         var fs = new MockFileSystem();
-        fs.AddFile("src/Classes/modMathTests.cls", new MockFileData(
+        fs.AddFile("src/Modules/modMathTests.bas", new MockFileData(
             "Public Sub Test_WithParams(x As Integer)\r\n" +
             "End Sub\r\n" +
             "\r\n" +
@@ -99,6 +101,19 @@ public class TestDiscoveryTests
 
         var testCase = Assert.Single(result);
         Assert.Equal("Test_NoParams", testCase.ProcedureName);
+    }
+
+    [Fact]
+    public void DiscoverTests_IgnoresClassModulesBecauseApplicationRunCannotInvokeThem()
+    {
+        var fs = new MockFileSystem();
+        fs.AddFile("src/Classes/clsMathTests.cls", new MockFileData(
+            "Public Sub Test_InAClassModule()\r\n" +
+            "End Sub\r\n"));
+
+        var result = TestDiscovery.DiscoverTests(fs, "src");
+
+        Assert.Empty(result);
     }
 
     [Fact]
