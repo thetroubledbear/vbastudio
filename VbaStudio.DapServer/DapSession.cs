@@ -33,9 +33,7 @@ public sealed class DapSession
     private readonly object _breakpointsLock = new();
     private readonly HashSet<(string Module, int Line)> _breakpoints = new();
 
-    private readonly ManualResetEventSlim _continueSignal = new(false);
-    private ProbeCommand _pendingCommand = ProbeCommand.Continue;
-    private volatile ProbeEvent? _currentProbe;
+    private ProbeEvent? _currentProbe;
 
     public DapSession(Excel.Application excel, Excel.Workbook workbook, string shadowPath, Stream output)
     {
@@ -45,7 +43,40 @@ public sealed class DapSession
         _output = output;
     }
 
-    public void HandleRequest(DapRequest request)
+    // Runs the whole session on the CALLING thread. Excel's VBA execution engine is not safe to
+    // drive from more than one .NET thread in the process, even where the second thread never
+    // itself touches COM - confirmed live: giving DebugSession.Run its own Thread.Start() (or
+    // even just having an otherwise-idle second thread block on reading stdin while
+    // Application.Run was in flight on this thread) made Application.Run fail intermittently
+    // with a spurious VBA "Out of memory" error or a NullReferenceException deep in the interop
+    // marshaling, on an unpredictable subset of runs. Removing every extra thread eliminated it.
+    // So the whole session - reading DAP requests before the run starts, running
+    // DebugSession.Run, and reading further DAP requests (stackTrace/scopes/variables/continue)
+    // while a probe is paused mid-run via OnProbe's own nested read loop below - all happens on
+    // this one thread. This exactly mirrors VbaStudio.Spike's own already-proven-live `debug`
+    // console mode, which reads Console.ReadLine() synchronously inside its onProbe callback on
+    // ProbeServer's callback thread - never a second, independently-spawned thread.
+    public void RunMessageLoop(Stream input)
+    {
+        while (true)
+        {
+            var request = DapProtocol.ReadRequest(input);
+            if (request == null)
+            {
+                break;
+            }
+
+            if (request.Command == "configurationDone")
+            {
+                HandleConfigurationDone(request, input);
+                break;
+            }
+
+            HandleRequest(request);
+        }
+    }
+
+    private void HandleRequest(DapRequest request)
     {
         switch (request.Command)
         {
@@ -62,11 +93,17 @@ public sealed class DapSession
                 HandleThreads(request);
                 break;
             case "configurationDone":
-                HandleConfigurationDone(request);
+                // Normally intercepted by RunMessageLoop before reaching here (it needs the
+                // input stream to hand off to OnProbe's own read loop). Reached only if a client
+                // sends configurationDone a second time - respond, but don't re-run the session.
+                SendResponse(request, null);
                 break;
             case "disconnect":
             case "terminate":
-                HandleDisconnect(request);
+                // Only meaningful here if it arrives before configurationDone (nothing is running
+                // yet). Once running, disconnect/terminate is intercepted inline by OnProbe's own
+                // read loop while a probe is paused - see OnProbe below.
+                SendResponse(request, null);
                 break;
             case "stackTrace":
                 HandleStackTrace(request);
@@ -76,9 +113,6 @@ public sealed class DapSession
                 break;
             case "variables":
                 HandleVariables(request);
-                break;
-            case "continue":
-                HandleContinue(request);
                 break;
             default:
                 SendErrorResponse(request, $"Unknown or not-yet-implemented command: {request.Command}");
@@ -132,32 +166,23 @@ public sealed class DapSession
         SendResponse(request, new ThreadsResponseBody(new[] { new DapThread(ThreadId, "Main") }));
     }
 
-    private void HandleConfigurationDone(DapRequest request)
+    private void HandleConfigurationDone(DapRequest request, Stream input)
     {
         SendResponse(request, null);
-
-        var thread = new Thread(RunDebugSession) { IsBackground = true };
-        thread.Start();
+        RunDebugSession(input);
     }
 
-    private void HandleDisconnect(DapRequest request)
+    private void RunDebugSession(Stream input)
     {
-        SendResponse(request, null);
-        _pendingCommand = ProbeCommand.Abort;
-        _continueSignal.Set();
-    }
-
-    private void RunDebugSession()
-    {
-        // An unhandled exception on this background thread would crash the entire process -
-        // confirmed the hard way in M5b's own Task 1 fix (ProbeServer's response-write path).
-        // Never let a session failure escape uncaught here.
+        // An unhandled exception here would crash the entire process - confirmed the hard way in
+        // M5b's own Task 1 fix (ProbeServer's response-write path). Never let a session failure
+        // escape uncaught here.
         try
         {
             var debugSession = new DebugSession();
             debugSession.Run(
                 _excel, _workbook, _shadowPath, _launchModule!, _launchEntryPoint!,
-                OnProbe,
+                probeEvent => OnProbe(probeEvent, input),
                 log => SendEvent("output", new OutputEventBody("console", log + "\n")));
 
             SendEvent("terminated", null);
@@ -169,7 +194,12 @@ public sealed class DapSession
         }
     }
 
-    private ProbeCommand OnProbe(ProbeEvent probeEvent)
+    // Invoked on ProbeServer's own callback thread (the same thread class Spike's console
+    // `debug` mode already drives its onProbe callback from - see the note on RunMessageLoop).
+    // When paused at a breakpoint, this reads and answers further DAP requests directly and
+    // synchronously - stackTrace/scopes/variables/setBreakpoints - until a continue or
+    // disconnect/terminate arrives, at which point it returns control to DebugSession.Run.
+    private ProbeCommand OnProbe(ProbeEvent probeEvent, Stream input)
     {
         bool isBreakpoint;
         lock (_breakpointsLock)
@@ -183,12 +213,30 @@ public sealed class DapSession
         }
 
         _currentProbe = probeEvent;
-        _continueSignal.Reset();
-
         SendEvent("stopped", new StoppedEventBody("breakpoint", ThreadId, null));
 
-        _continueSignal.Wait();
-        return _pendingCommand;
+        while (true)
+        {
+            var request = DapProtocol.ReadRequest(input);
+            if (request == null)
+            {
+                return ProbeCommand.Abort;
+            }
+
+            if (request.Command == "continue")
+            {
+                SendResponse(request, new ContinueResponseBody(true));
+                return ProbeCommand.Continue;
+            }
+
+            if (request.Command == "disconnect" || request.Command == "terminate")
+            {
+                SendResponse(request, null);
+                return ProbeCommand.Abort;
+            }
+
+            HandleRequest(request);
+        }
     }
 
     private void HandleStackTrace(DapRequest request)
@@ -218,13 +266,6 @@ public sealed class DapSession
             .Select(v => new DapVariable(v.Name, v.Value, v.Type, 0))
             .ToArray() ?? Array.Empty<DapVariable>();
         SendResponse(request, new VariablesResponseBody(variables));
-    }
-
-    private void HandleContinue(DapRequest request)
-    {
-        SendResponse(request, new ContinueResponseBody(true));
-        _pendingCommand = ProbeCommand.Continue;
-        _continueSignal.Set();
     }
 
     private void SendResponse(DapRequest request, object? body)
