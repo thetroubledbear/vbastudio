@@ -98,6 +98,87 @@ public class DapProtocolTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public void ReadRequest_NegativeContentLength_ReturnsNull()
+    {
+        var stream = new MemoryStream();
+        var bytes = Encoding.ASCII.GetBytes("Content-Length: -1\r\n\r\n");
+        stream.Write(bytes, 0, bytes.Length);
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRequest_ContentLengthExceedsMax_ReturnsNull()
+    {
+        var stream = new MemoryStream();
+        var bytes = Encoding.ASCII.GetBytes("Content-Length: 999999999\r\n\r\n");
+        stream.Write(bytes, 0, bytes.Length);
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRequest_JsonMissingSeq_ReturnsNull()
+    {
+        var stream = new MemoryStream();
+        WriteRaw(stream, "{\"type\":\"request\",\"command\":\"initialize\"}");
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRequest_JsonMissingCommand_ReturnsNull()
+    {
+        var stream = new MemoryStream();
+        WriteRaw(stream, "{\"seq\":1,\"type\":\"request\"}");
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRequest_SeqIsAString_ReturnsNull()
+    {
+        var stream = new MemoryStream();
+        WriteRaw(stream, "{\"seq\":\"not-a-number\",\"type\":\"request\",\"command\":\"initialize\"}");
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ReadRequest_MultipleHeaderLines_StillParsesCorrectly()
+    {
+        var stream = new MemoryStream();
+        var json = "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\"}";
+        var jsonBytes = Encoding.UTF8.GetBytes(json);
+        var header = $"Content-Length: {jsonBytes.Length}\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n";
+        var headerBytes = Encoding.ASCII.GetBytes(header);
+        stream.Write(headerBytes, 0, headerBytes.Length);
+        stream.Write(jsonBytes, 0, jsonBytes.Length);
+        stream.Position = 0;
+
+        var result = DapProtocol.ReadRequest(stream);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result!.Seq);
+        Assert.Equal("initialize", result.Command);
+    }
+
     private static void WriteRaw(MemoryStream stream, string json)
     {
         var jsonBytes = Encoding.UTF8.GetBytes(json);

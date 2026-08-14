@@ -6,6 +6,8 @@ namespace VbaStudio.Core.Dap;
 
 public static class DapProtocol
 {
+    private const int MaxContentLength = 64 * 1024 * 1024; // 64 MB - generous, but bounds allocation
+
     // Reads one Content-Length-framed DAP request from input. Best-effort: any malformed or
     // truncated input returns null (treated as a clean disconnect by the caller) rather than
     // throwing - a DAP client closing the pipe mid-message must not crash the server.
@@ -23,10 +25,25 @@ public static class DapProtocol
             return null;
         }
 
-        var blankLine = ReadHeaderLine(input);
-        if (blankLine != "")
+        if (contentLength < 0 || contentLength > MaxContentLength)
         {
             return null;
+        }
+
+        // Consume any further header lines (e.g. Content-Type, which real DAP clients may send)
+        // until the blank separator line - DAP permits headers beyond Content-Length.
+        while (true)
+        {
+            var line = ReadHeaderLine(input);
+            if (line == null)
+            {
+                return null;
+            }
+
+            if (line == "")
+            {
+                break;
+            }
         }
 
         var buffer = new byte[contentLength];
@@ -47,13 +64,24 @@ public static class DapProtocol
             var json = Encoding.UTF8.GetString(buffer);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var seq = root.GetProperty("seq").GetInt32();
-            var command = root.GetProperty("command").GetString() ?? "";
+
+            if (!root.TryGetProperty("seq", out var seqEl) || seqEl.ValueKind != JsonValueKind.Number || !seqEl.TryGetInt32(out var seq))
+            {
+                return null;
+            }
+
+            if (!root.TryGetProperty("command", out var commandEl) || commandEl.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var command = commandEl.GetString() ?? "";
             JsonElement? arguments = null;
             if (root.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind != JsonValueKind.Null)
             {
                 arguments = argsEl.Clone();
             }
+
             return new DapRequest(seq, command, arguments);
         }
         catch (JsonException)

@@ -28,6 +28,7 @@ public sealed class DapSession
 
     private string? _launchModule;
     private string? _launchEntryPoint;
+    private bool _running;
     private IReadOnlyDictionary<string, string> _moduleFilePaths = new Dictionary<string, string>();
 
     private readonly object _breakpointsLock = new();
@@ -79,7 +80,14 @@ public sealed class DapSession
                 break;
             }
 
-            HandleRequest(request);
+            try
+            {
+                HandleRequest(request);
+            }
+            catch (Exception ex)
+            {
+                SendErrorResponse(request, ex.Message);
+            }
         }
     }
 
@@ -127,6 +135,9 @@ public sealed class DapSession
             case "variables":
                 HandleVariables(request);
                 break;
+            case "continue":
+                SendErrorResponse(request, "Not currently paused at a breakpoint.");
+                break;
             default:
                 SendErrorResponse(request, $"Unknown or not-yet-implemented command: {request.Command}");
                 break;
@@ -142,15 +153,29 @@ public sealed class DapSession
 
     private void HandleLaunch(DapRequest request)
     {
+        if (_running)
+        {
+            SendErrorResponse(request, "launch is not valid after the debug session has started.");
+            return;
+        }
+
         var args = request.Arguments!.Value.Deserialize<LaunchArguments>()!;
+
+        if (!string.Equals(_workbook.FullName, args.Program, StringComparison.OrdinalIgnoreCase))
+        {
+            SendErrorResponse(request, $"launch targets '{args.Program}', but the attached Excel instance has '{_workbook.FullName}' active. Open the target workbook and make it the active window before starting the debug session.");
+            return;
+        }
+
         var dotIndex = args.EntryPoint.LastIndexOf('.');
         _launchModule = args.EntryPoint.Substring(0, dotIndex);
         _launchEntryPoint = args.EntryPoint;
 
+        var workbookDir = Path.GetDirectoryName(_workbook.FullName) ?? ".";
         var access = new ExcelVbaProjectAccess(_workbook.VBProject);
         _moduleFilePaths = access.ReadAll().ToDictionary(
             m => m.Name,
-            m => Path.Combine("src", m.Kind.SourceFolder(), m.Name + m.Kind.FileExtension()));
+            m => Path.Combine(workbookDir, "src", m.Kind.SourceFolder(), m.Name + m.Kind.FileExtension()));
 
         SendResponse(request, null);
     }
@@ -158,7 +183,7 @@ public sealed class DapSession
     private void HandleSetBreakpoints(DapRequest request)
     {
         var args = request.Arguments!.Value.Deserialize<SetBreakpointsArguments>()!;
-        var moduleName = Path.GetFileNameWithoutExtension(args.Source.Path ?? "");
+        var moduleName = Path.GetFileNameWithoutExtension(args.Source.Path ?? "").ToUpperInvariant();
 
         var verifiedBreakpoints = new List<DapBreakpoint>();
         lock (_breakpointsLock)
@@ -181,6 +206,7 @@ public sealed class DapSession
 
     private void HandleConfigurationDone(DapRequest request, Stream input)
     {
+        _running = true;
         SendResponse(request, null);
         RunDebugSession(input);
     }
@@ -193,10 +219,19 @@ public sealed class DapSession
         try
         {
             var debugSession = new DebugSession();
-            debugSession.Run(
+            var result = debugSession.Run(
                 _excel, _workbook, _shadowPath, _launchModule!, _launchEntryPoint!,
                 probeEvent => OnProbe(probeEvent, input),
                 log => SendEvent("output", new OutputEventBody("console", log + "\n")));
+
+            if (!result.Run.Success)
+            {
+                var d = result.Run.Diagnostic;
+                var message = d == null
+                    ? "Run failed with no diagnostic detail."
+                    : $"Run failed: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}";
+                SendEvent("output", new OutputEventBody("stderr", message + "\n"));
+            }
 
             SendEvent("terminated", null);
         }
@@ -217,7 +252,7 @@ public sealed class DapSession
         bool isBreakpoint;
         lock (_breakpointsLock)
         {
-            isBreakpoint = _breakpoints.Contains((probeEvent.ModuleName, probeEvent.OriginalLine));
+            isBreakpoint = _breakpoints.Contains((probeEvent.ModuleName.ToUpperInvariant(), probeEvent.OriginalLine));
         }
 
         if (!isBreakpoint)
@@ -233,22 +268,32 @@ public sealed class DapSession
             var request = DapProtocol.ReadRequest(input);
             if (request == null)
             {
+                _currentProbe = null;
                 return ProbeCommand.Abort;
             }
 
             if (request.Command == "continue")
             {
                 SendResponse(request, new ContinueResponseBody(true));
+                _currentProbe = null;
                 return ProbeCommand.Continue;
             }
 
             if (request.Command == "disconnect" || request.Command == "terminate")
             {
                 SendResponse(request, null);
+                _currentProbe = null;
                 return ProbeCommand.Abort;
             }
 
-            HandleRequest(request);
+            try
+            {
+                HandleRequest(request);
+            }
+            catch (Exception ex)
+            {
+                SendErrorResponse(request, ex.Message);
+            }
         }
     }
 
