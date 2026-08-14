@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\vba\**" LinkBase="vba" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

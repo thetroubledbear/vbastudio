@@ -35,13 +35,15 @@ Public Sub Probe(id As Long, values As Variant)
     responseText = http.ResponseText
 
     If InStr(responseText, """abort""") > 0 Then
-        Err.Raise vbObjectError + 3000, "modAgent", "Debug session aborted by user."
+        Err.Raise vbObjectError + 3000, "Agent", "Debug session aborted by user."
     End If
 End Sub
 
 Private Function JsonValue(v As Variant) As String
     Dim s As String
-    If VarType(v) = vbObject Then
+    If IsArray(v) Then
+        s = "<array:" & TypeName(v) & ">"
+    ElseIf IsObject(v) Then
         s = "<obj:" & TypeName(v) & ">"
     ElseIf IsNull(v) Then
         s = ""

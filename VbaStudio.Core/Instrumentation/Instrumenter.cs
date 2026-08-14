@@ -116,9 +116,10 @@ public static class Instrumenter
             if (!skip && !isBlank)
             {
                 var originalLine = procedure.StartLine + line.StartPhysicalLine;
-                // "Agent.Probe" is a forward reference to modAgent.bas, not yet written - that
-                // module is a later milestone's job. It is expected to expose a
-                // Probe(id As Long, values As ParamArray Variant) shaped procedure. "values"
+                // "Agent.Probe" refers to vba/modAgent.bas, built as part of this same milestone.
+                // It exposes Public Sub Probe(id As Long, values As Variant) - a plain Variant,
+                // not ParamArray - the call site here passes the Array(...) result as a single
+                // argument, which a ParamArray would incorrectly nest rather than spread. "values"
                 // alternates "name" string literal / bare value pairs, in the same
                 // parameter-then-locals order the procedure declares them. "id" is globally
                 // unique across an entire instrumentation run via the NextProbeId chaining

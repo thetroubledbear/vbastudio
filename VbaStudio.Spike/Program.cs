@@ -149,7 +149,14 @@ internal class Program
     {
         var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
         var workbook = excel.ActiveWorkbook;
-        var moduleName = qualifiedName.Substring(0, qualifiedName.LastIndexOf('.'));
+        var dotIndex = qualifiedName.LastIndexOf('.');
+        if (dotIndex < 0)
+        {
+            Console.WriteLine($"Expected a qualified name like \"ModuleName.ProcedureName\", got \"{qualifiedName}\".");
+            return;
+        }
+
+        var moduleName = qualifiedName.Substring(0, dotIndex);
 
         var workbookDir = System.IO.Path.GetDirectoryName(workbook.FullName) ?? ".";
         var shadowPath = System.IO.Path.Combine(workbookDir, "build", "shadow.xlsm");
