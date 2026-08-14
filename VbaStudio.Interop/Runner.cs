@@ -9,7 +9,6 @@ using VBIDE;
 
 namespace VbaStudio.Interop;
 
-public sealed record CompileResult(bool Success, Diagnostic? Diagnostic);
 public sealed record RunResult(bool Success, object? ReturnValue, Diagnostic? Diagnostic);
 
 public sealed class Runner
@@ -17,12 +16,6 @@ public sealed class Runner
     // Only this caption means "VBA compile/runtime error". A "Microsoft Excel" dialog during
     // Application.Run is typically a MsgBox from the macro itself - dismissed, not a failure.
     private const string VbaErrorCaption = "Microsoft Visual Basic for Applications";
-
-    // The name is deliberately unusual, not fully collision-proof - VBIDE auto-renames on
-    // collision (Add() returns whatever name it actually assigned; we always reference that
-    // returned object, never a name lookup), so a clash only costs an odd module name, nothing
-    // else.
-    private const string CompileCheckProcedureName = "VbaStudioCompileCheck";
 
     private readonly Excel.Application _excel;
     private readonly VBIDE.VBProject _project;
@@ -38,83 +31,27 @@ public sealed class Runner
         _log = log;
     }
 
-    public CompileResult CompileOnly()
-    {
-        EnsureTargetProjectIsActive();
-
-        // The VBE's own "Compile VBAProject" command (control id 578) does not reliably surface
-        // errors when driven by automation - confirmed empirically: Execute() can return cleanly
-        // in under 100ms on code that does not compile, with no dialog ever appearing. The one
-        // mechanism proven reliable is Application.Run's own implicit "compile the whole project
-        // before executing anything" step. To get a side-effect-free compile check out of that,
-        // inject a throwaway no-op procedure, Run it, then always remove it again.
-        //
-        // Every phase below runs under its own watcher, not just the Run() phase - confirmed the
-        // hard way. VBComponents.Add() against a project with a just-edited, not-yet-validated
-        // module (the exact CompileOnly use case) can itself pop a modal: "This action will reset
-        // your project, proceed anyway?" - same caption/class as a compile error, but not one.
-        // With no watcher running yet at that point, it blocked indefinitely. A dialog from setup
-        // or cleanup gets dismissed but is not diagnostic-worthy; only a dialog during the actual
-        // compile-check Run() means the target code failed to compile - so each phase gets its
-        // own fresh watcher, and only the middle one's capture becomes the returned diagnostic.
-        VBComponent? checkComponent = null;
-        ExecuteWithWatcher(() =>
-        {
-            var components = _project.VBComponents;
-            try
-            {
-                checkComponent = components.Add(vbext_ComponentType.vbext_ct_StdModule);
-            }
-            finally
-            {
-                ComRelease.Release(components);
-            }
-
-            var codeModule = checkComponent.CodeModule;
-            try
-            {
-                codeModule.AddFromString($"Sub {CompileCheckProcedureName}()\r\nEnd Sub");
-            }
-            finally
-            {
-                ComRelease.Release(codeModule);
-            }
-        });
-
-        if (checkComponent == null)
-        {
-            throw new InvalidOperationException("Failed to create the compile-check module.");
-        }
-
-        var qualifiedName = $"{checkComponent.Name}.{CompileCheckProcedureName}";
-        var captured = ExecuteWithWatcher(() =>
-        {
-            _excel.Run(qualifiedName);
-        });
-
-        var componentsForRemove = _project.VBComponents;
-        try
-        {
-            ExecuteWithWatcher(() => componentsForRemove.Remove(checkComponent));
-        }
-        finally
-        {
-            ComRelease.Release(componentsForRemove);
-            ComRelease.Release(checkComponent);
-        }
-
-        var diagnostic = captured == null ? null : CorrelateDiagnostic(captured);
-        return new CompileResult(diagnostic == null, diagnostic);
-    }
-
     public RunResult Run(string entryPoint)
     {
         EnsureTargetProjectIsActive();
 
-        // No separate compile step: Application.Run compiles the whole project as a side effect
-        // before executing anything, which is the one mechanism proven reliable (see CompileOnly).
-        // A compile failure and a genuine runtime error surface through the identical dialog, and
-        // M2's contract only promises {module, line, message} for either - not which kind it was.
+        // There is no reliable side-effect-free compile check via automation in this VBE version.
+        // Two approaches were tried and both failed against real Excel:
+        //  1. The VBE's own "Compile VBAProject" command (control id 578) does not reliably
+        //     surface errors - Execute() can return cleanly in under 100ms on code that does not
+        //     compile, with no dialog ever appearing.
+        //  2. Injecting a throwaway no-op procedure and Application.Run-ing it to force a
+        //     whole-project compile without executing real code: when the error is in a
+        //     *different* module than the one being run, VBA does not show a dismissible dialog
+        //     at all - it drops the VBE straight into break mode on the broken module, with
+        //     nothing for a window-enumeration-based watcher to click. Confirmed against a live
+        //     Excel session; recovering from it required manually closing the workbook.
+        // The one mechanism proven reliable, every time, is calling Application.Run directly on
+        // the actual target entry point: VBA's implicit "compile the whole project before
+        // executing" step then surfaces a real, dismissible "Compile error" dialog for that
+        // module. A compile failure and a genuine runtime error surface through the identical
+        // dialog, and M2's contract only promises {module, line, message} for either - not which
+        // kind it was - so Run() alone satisfies the exit gate without a separate compile step.
         object? returnValue = null;
         var captured = ExecuteWithWatcher(() =>
         {
@@ -134,8 +71,7 @@ public sealed class Runner
 
     /// <summary>
     /// Arms the dialog watcher, makes the blocking COM call, tears the watcher back down, and
-    /// returns whatever dialog was captured. Interpreting the capture is the caller's job -
-    /// CompileOnly() and Run() disagree about what a captured dialog means.
+    /// returns whatever dialog was captured. Interpreting the capture is the caller's job.
     /// </summary>
     private CapturedDialog? ExecuteWithWatcher(Action blockingCall)
     {

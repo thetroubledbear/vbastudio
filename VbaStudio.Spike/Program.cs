@@ -43,25 +43,18 @@ internal class Program
         var project = excel.ActiveWorkbook.VBProject;
         var runner = new Runner(excel, project, Console.WriteLine);
 
-        Console.WriteLine("Compiling...");
-        var compileStart = DateTime.UtcNow;
-        var compile = runner.CompileOnly();
-        var compileElapsed = DateTime.UtcNow - compileStart;
-        Console.WriteLine($"Compile finished in {compileElapsed.TotalMilliseconds:F0}ms");
-
-        if (!compile.Success)
-        {
-            var d = compile.Diagnostic!;
-            Console.WriteLine($"COMPILE ERROR: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}");
-            return;
-        }
-
-        Console.WriteLine($"Compile clean. Running {entryPoint}...");
+        // No separate compile step - Run() implicitly compiles the whole project first. See
+        // Runner.Run()'s comment for why: it is the only compile-check mechanism proven reliable.
+        Console.WriteLine($"Running {entryPoint}...");
+        var start = DateTime.UtcNow;
         var run = runner.Run(entryPoint);
+        var elapsed = DateTime.UtcNow - start;
+        Console.WriteLine($"Finished in {elapsed.TotalMilliseconds:F0}ms");
+
         if (!run.Success)
         {
             var d = run.Diagnostic!;
-            Console.WriteLine($"RUNTIME ERROR: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}");
+            Console.WriteLine($"ERROR: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}");
             return;
         }
 
