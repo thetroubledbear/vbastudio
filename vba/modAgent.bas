@@ -5,7 +5,7 @@ Option Explicit
 Private Const AGENT_PORT As Long = 8731
 Private Const RECEIVE_TIMEOUT_MS As Long = 3600000
 
-Public Sub Probe(id As Long, ParamArray values() As Variant)
+Public Sub Probe(id As Long, values As Variant)
     Dim json As String
     json = "{""probe_id"":" & id & ",""vars"":["
 
