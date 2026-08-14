@@ -1,7 +1,12 @@
 // VbaStudio.DapServer/DapSession.cs
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using VbaStudio.Core.Dap;
+using VbaStudio.Core.Model;
+using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace VbaStudio.DapServer;
@@ -17,6 +22,13 @@ public sealed class DapSession
     private readonly object _outputLock = new();
     private int _nextSeq = 1;
 
+    private string? _launchModule;
+    private string? _launchEntryPoint;
+    private IReadOnlyDictionary<string, string> _moduleFilePaths = new Dictionary<string, string>();
+
+    private readonly object _breakpointsLock = new();
+    private readonly HashSet<(string Module, int Line)> _breakpoints = new();
+
     public DapSession(Excel.Application excel, Excel.Workbook workbook, string shadowPath, Stream output)
     {
         _excel = excel;
@@ -31,6 +43,12 @@ public sealed class DapSession
         {
             case "initialize":
                 HandleInitialize(request);
+                break;
+            case "launch":
+                HandleLaunch(request);
+                break;
+            case "setBreakpoints":
+                HandleSetBreakpoints(request);
                 break;
             case "threads":
                 HandleThreads(request);
@@ -53,6 +71,40 @@ public sealed class DapSession
         var capabilities = new Capabilities(SupportsConfigurationDoneRequest: true);
         SendResponse(request, capabilities);
         SendEvent("initialized", null);
+    }
+
+    private void HandleLaunch(DapRequest request)
+    {
+        var args = request.Arguments!.Value.Deserialize<LaunchArguments>()!;
+        var dotIndex = args.EntryPoint.LastIndexOf('.');
+        _launchModule = args.EntryPoint.Substring(0, dotIndex);
+        _launchEntryPoint = args.EntryPoint;
+
+        var access = new ExcelVbaProjectAccess(_workbook.VBProject);
+        _moduleFilePaths = access.ReadAll().ToDictionary(
+            m => m.Name,
+            m => Path.Combine("src", m.Kind.SourceFolder(), m.Name + m.Kind.FileExtension()));
+
+        SendResponse(request, null);
+    }
+
+    private void HandleSetBreakpoints(DapRequest request)
+    {
+        var args = request.Arguments!.Value.Deserialize<SetBreakpointsArguments>()!;
+        var moduleName = Path.GetFileNameWithoutExtension(args.Source.Path ?? "");
+
+        var verifiedBreakpoints = new List<DapBreakpoint>();
+        lock (_breakpointsLock)
+        {
+            _breakpoints.RemoveWhere(bp => bp.Module == moduleName);
+            foreach (var bp in args.Breakpoints)
+            {
+                _breakpoints.Add((moduleName, bp.Line));
+                verifiedBreakpoints.Add(new DapBreakpoint(Verified: true, Line: bp.Line));
+            }
+        }
+
+        SendResponse(request, new SetBreakpointsResponseBody(verifiedBreakpoints));
     }
 
     private void HandleThreads(DapRequest request)
