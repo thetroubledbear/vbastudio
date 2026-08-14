@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VbaStudio.Tests", "VbaStudi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VbaStudio.Interop", "VbaStudio.Interop\VbaStudio.Interop.csproj", "{4061E2C7-DA62-49BE-AF50-5D6D056AA4E3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VbaStudio.DapServer", "VbaStudio.DapServer\VbaStudio.DapServer.csproj", "{22E68DE3-7AB5-4451-A3D5-45FA9CBA2BBB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +38,9 @@ Global
 		{4061E2C7-DA62-49BE-AF50-5D6D056AA4E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4061E2C7-DA62-49BE-AF50-5D6D056AA4E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4061E2C7-DA62-49BE-AF50-5D6D056AA4E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{22E68DE3-7AB5-4451-A3D5-45FA9CBA2BBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{22E68DE3-7AB5-4451-A3D5-45FA9CBA2BBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{22E68DE3-7AB5-4451-A3D5-45FA9CBA2BBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{22E68DE3-7AB5-4451-A3D5-45FA9CBA2BBB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
