@@ -187,15 +187,15 @@ public class InstrumenterTests
 
         var result = Instrumenter.Instrument(source, procedure, "modWork");
 
-        // Two independent statements, two probes - not merged into one.
-        Assert.Equal(2, result.ProbeSites.Count);
+        // "y = 2" survives as real, uncommented, separately-executing code - the original
+        // continuation-joining bug (which would have merged it into the comment and dropped
+        // it from execution) is still fixed. It gets no probe of its own, though: placing one
+        // immediately after a line trimming to " _" risks that probe call itself being
+        // swallowed if VBA treats the trailing " _" as continuing the comment onto the next
+        // physical line - safe under either reading of that open question.
+        Assert.Single(result.ProbeSites);
         Assert.Equal(2, result.ProbeSites[0].OriginalLine);
-        Assert.Equal(3, result.ProbeSites[1].OriginalLine);
-        // The real comment survives in the output, unmodified.
-        Assert.Contains("x = 1 ' comment ending in _", result.InstrumentedSource);
-        // "y = 2" must NOT have been swallowed into the comment - it must appear as its own
-        // real (uncommented) statement, immediately preceded by its own probe line.
-        Assert.Contains("Agent.Probe 2, Array()\r\n    y = 2", result.InstrumentedSource);
+        Assert.Contains("x = 1 ' comment ending in _\r\n    y = 2", result.InstrumentedSource);
     }
 
     [Fact]
@@ -272,5 +272,25 @@ public class InstrumenterTests
 
         Assert.Empty(result.ProbeSites);
         Assert.DoesNotContain("Agent.Probe", result.InstrumentedSource);
+    }
+
+    [Fact]
+    public void Instrument_SelectCase_NoProbeBetweenSelectCaseAndFirstCase()
+    {
+        var source = "Public Sub DoWork(x As Long)\r\n" +
+                      "    Select Case x\r\n" +
+                      "        Case 1\r\n" +
+                      "            x = 2\r\n" +
+                      "    End Select\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        Assert.Equal(3, result.ProbeSites.Count);
+        Assert.Equal(new[] { 2, 4, 5 }, result.ProbeSites.Select(p => p.OriginalLine));
+        // No probe line was inserted between "Select Case x" and "Case 1" - they remain adjacent.
+        Assert.Contains("    Select Case x\r\n        Case 1\r\n", result.InstrumentedSource);
     }
 }

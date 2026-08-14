@@ -24,6 +24,12 @@ public static class Instrumenter
     private static readonly Regex WithPattern = new(@"^\s*With\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex EndWithPattern = new(@"^\s*End\s+With\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // VBA has exactly one position where inserting any statement is a hard compile error:
+    // between "Select Case <expr>" and its first "Case" clause. The Select Case line itself
+    // still gets probed normally (nothing wrong with probing before it runs) - only the next
+    // probeable line, which valid VBA syntax guarantees is the first Case clause, is suppressed.
+    private static readonly Regex SelectCasePattern = new(@"^\s*Select\s+Case\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static InstrumentResult Instrument(
         string sourceText, ProcedureSymbols procedure, string moduleName, int startingProbeId = 1)
     {
@@ -50,11 +56,14 @@ public static class Instrumenter
 
         var currentId = startingProbeId;
         var withDepth = 0;
+        var suppressNextProbe = false;
+        var previousEmittedEndsInContinuationMarker = false;
         foreach (var line in joined)
         {
             var stripped = CommentStripper.StripComment(line.Text);
             var isWithLine = WithPattern.IsMatch(stripped);
             var isEndWithLine = EndWithPattern.IsMatch(stripped);
+            var isSelectCaseLine = SelectCasePattern.IsMatch(stripped);
 
             bool skip;
             if (isWithLine)
@@ -77,15 +86,51 @@ public static class Instrumenter
 
             var isBlank = string.IsNullOrWhiteSpace(stripped);
 
+            // We cannot empirically confirm (no Excel in this milestone) whether real VBA
+            // treats a trailing " _" inside a comment as continuing that comment onto the next
+            // physical line - there is credible evidence it does. If it does, a probe line
+            // emitted immediately after such a line risks being silently swallowed into the
+            // continued comment, so it would never fire. Suppressing that probe is safe under
+            // either reading of the open question.
+            if (previousEmittedEndsInContinuationMarker && !skip && !isBlank)
+            {
+                skip = true;
+            }
+
+            // VBA forbids any statement between "Select Case <expr>" and its first "Case"
+            // clause - inserting a probe there is a hard compile error, not just semantically
+            // odd. The Select Case line itself still gets probed normally (nothing wrong with
+            // probing before it runs); only the next probeable line - which VBA syntax
+            // guarantees is the first Case clause - is suppressed.
+            if (suppressNextProbe && !skip && !isBlank)
+            {
+                skip = true;
+                suppressNextProbe = false;
+            }
+
             if (!skip && !isBlank)
             {
                 var originalLine = procedure.StartLine + line.StartPhysicalLine;
+                // "Agent.Probe" is a forward reference to modAgent.bas, not yet written - that
+                // module is a later milestone's job. It is expected to expose a
+                // Probe(id As Long, values As ParamArray Variant) shaped procedure. "values"
+                // alternates "name" string literal / bare value pairs, in the same
+                // parameter-then-locals order the procedure declares them. "id" is globally
+                // unique across an entire instrumentation run via the NextProbeId chaining
+                // mechanism. Array() with zero arguments (a procedure with no parameters or
+                // locals) is a legitimate, valid emission, not a bug.
                 outputLines.Add($"Agent.Probe {currentId}, Array({probeArgs})");
                 probeSites.Add(new ProbeSite(currentId, moduleName, originalLine));
                 currentId++;
             }
 
+            if (isSelectCaseLine)
+            {
+                suppressNextProbe = true;
+            }
+
             outputLines.Add(line.Text);
+            previousEmittedEndsInContinuationMarker = line.Text.TrimEnd().EndsWith(" _");
         }
 
         outputLines.Add(endLine);
