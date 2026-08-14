@@ -27,6 +27,15 @@ public static class ModuleKindExtensions
         ModuleKind.Document => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
         _ => Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ReplacementFallback)
     };
+
+    public static string SourceFolder(this ModuleKind kind) => kind switch
+    {
+        ModuleKind.Standard => "Modules",
+        ModuleKind.Class => "Classes",
+        ModuleKind.UserForm => "Forms",
+        ModuleKind.Document => "Sheets",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
 }
 
 public sealed record VbaModule(

@@ -21,12 +21,12 @@ public class SyncEngineTests
         var sync = new SyncEngine(fake, fs, "src");
 
         sync.Pull();
-        var pulled = fs.File.ReadAllText(fs.Path.Combine("src", "modCalc.bas"), Encoding.GetEncoding(1252));
+        var pulled = fs.File.ReadAllText(fs.Path.Combine("src", "Modules", "modCalc.bas"), Encoding.GetEncoding(1252));
         Assert.Equal(fake.ReadAll().Single().Code, pulled);
 
         sync.Push();
         sync.Pull();
-        var pulledAgain = fs.File.ReadAllText(fs.Path.Combine("src", "modCalc.bas"), Encoding.GetEncoding(1252));
+        var pulledAgain = fs.File.ReadAllText(fs.Path.Combine("src", "Modules", "modCalc.bas"), Encoding.GetEncoding(1252));
 
         Assert.Equal(pulled, pulledAgain);
     }
@@ -41,7 +41,7 @@ public class SyncEngineTests
 
         sync.Pull();
 
-        var bytes = fs.File.ReadAllBytes(fs.Path.Combine("src", "Sheet1.cls"));
+        var bytes = fs.File.ReadAllBytes(fs.Path.Combine("src", "Sheets", "Sheet1.cls"));
         var text = Encoding.UTF8.GetString(bytes);
         Assert.Contains("Café", text);
     }
@@ -93,7 +93,7 @@ public class SyncEngineTests
         var fs = new MockFileSystem();
         var sync = new SyncEngine(fake, fs, "src");
         sync.Pull();
-        fs.File.WriteAllText(fs.Path.Combine("src", "modCalc.bas"), "Sub Foo()\r\n    ' changed\r\nEnd Sub", Encoding.GetEncoding(1252));
+        fs.File.WriteAllText(fs.Path.Combine("src", "Modules", "modCalc.bas"), "Sub Foo()\r\n    ' changed\r\nEnd Sub", Encoding.GetEncoding(1252));
 
         sync.Push();
 
@@ -106,7 +106,7 @@ public class SyncEngineTests
     {
         var fake = new FakeVbaProjectAccess();
         var fs = new MockFileSystem();
-        fs.AddFile("src/UserFormMain.frx", new MockFileData(new byte[] { 0x01, 0x02 }));
+        fs.AddFile("src/Forms/UserFormMain.frx", new MockFileData(new byte[] { 0x01, 0x02 }));
         fs.AddFile("src/.gitattributes", new MockFileData("*.frx binary"));
         var sync = new SyncEngine(fake, fs, "src");
 

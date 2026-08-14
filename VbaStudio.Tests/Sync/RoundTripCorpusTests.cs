@@ -38,14 +38,16 @@ public class RoundTripCorpusTests
         var fs = new MockFileSystem();
         var sync = new SyncEngine(fake, fs, "src");
 
+        var folder = kind.SourceFolder();
+
         sync.Pull();
-        var first = fs.File.ReadAllBytes(fs.Path.Combine("src", moduleName + extension));
+        var first = fs.File.ReadAllBytes(fs.Path.Combine("src", folder, moduleName + extension));
 
         Assert.Equal(code, encoding.GetString(first));
 
         sync.Push();
         sync.Pull();
-        var second = fs.File.ReadAllBytes(fs.Path.Combine("src", moduleName + extension));
+        var second = fs.File.ReadAllBytes(fs.Path.Combine("src", folder, moduleName + extension));
 
         Assert.Equal(first, second);
     }
