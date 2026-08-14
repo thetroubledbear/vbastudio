@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using VbaStudio.Core.Win32;
 using VbaStudio.Tests.Fakes;
 using Xunit;
@@ -82,6 +83,86 @@ public class DialogWatcherTests
         Assert.NotNull(watcher.Captured);
         Assert.Equal("This will reset your project.", watcher.Captured!.Body);
         Assert.Empty(fake.ClickedHandles);
+    }
+
+    [Fact]
+    public void PollOnce_MatchingCaptionButNotADialogClass_Ignored()
+    {
+        // Excel's own frame window (XLMAIN) carries the caption "Microsoft Excel" in some
+        // states; only the standard dialog class #32770 may be enumerated and clicked.
+        var fake = new FakeWin32Windows();
+        fake.AddTopLevelWindow(new FakeWindow
+        {
+            Handle = (IntPtr)1, Caption = "Microsoft Excel",
+            ClassName = "XLMAIN", ProcessId = TargetPid
+        });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)10, Caption = "Some frame text", ClassName = "Static", ProcessId = TargetPid });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)11, Caption = "OK", ClassName = "Button", ProcessId = TargetPid });
+
+        var watcher = new DialogWatcher(fake, TargetPid);
+        watcher.PollOnce();
+
+        Assert.Null(watcher.Captured);
+        Assert.Empty(fake.ClickedHandles);
+    }
+
+    [Fact]
+    public void PollOnce_HelpButtonBeforeOkInZOrder_ClicksOk()
+    {
+        var fake = new FakeWin32Windows();
+        fake.AddTopLevelWindow(new FakeWindow
+        {
+            Handle = (IntPtr)1, Caption = "Microsoft Visual Basic for Applications",
+            ClassName = "#32770", ProcessId = TargetPid
+        });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)10, Caption = "Compile error:", ClassName = "Static", ProcessId = TargetPid });
+        // Help is enumerated first - EnumChildWindows returns Z-order, not OK-first order.
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)20, Caption = "Help", ClassName = "Button", ProcessId = TargetPid });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)21, Caption = "OK", ClassName = "Button", ProcessId = TargetPid });
+
+        var watcher = new DialogWatcher(fake, TargetPid);
+        watcher.PollOnce();
+
+        Assert.NotNull(watcher.Captured);
+        Assert.Equal(new[] { (IntPtr)21 }, fake.ClickedHandles);
+    }
+
+    [Fact]
+    public void PollOnce_OnlyNonOkButton_FallsBackToFirstButton()
+    {
+        var fake = new FakeWin32Windows();
+        fake.AddTopLevelWindow(new FakeWindow
+        {
+            Handle = (IntPtr)1, Caption = "Microsoft Excel",
+            ClassName = "#32770", ProcessId = TargetPid
+        });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)10, Caption = "Continue?", ClassName = "Static", ProcessId = TargetPid });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)20, Caption = "Continue", ClassName = "Button", ProcessId = TargetPid });
+
+        var watcher = new DialogWatcher(fake, TargetPid);
+        watcher.PollOnce();
+
+        Assert.Equal(new[] { (IntPtr)20 }, fake.ClickedHandles);
+    }
+
+    [Fact]
+    public void PollOnce_MatchedDialog_IsLogged()
+    {
+        var fake = new FakeWin32Windows();
+        fake.AddTopLevelWindow(new FakeWindow
+        {
+            Handle = (IntPtr)1, Caption = "Microsoft Visual Basic for Applications",
+            ClassName = "#32770", ProcessId = TargetPid
+        });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)10, Caption = "Syntax error", ClassName = "Static", ProcessId = TargetPid });
+
+        var logged = new List<string>();
+        var watcher = new DialogWatcher(fake, TargetPid, logged.Add);
+        watcher.PollOnce();
+
+        var line = Assert.Single(logged);
+        Assert.Contains("Microsoft Visual Basic for Applications", line);
+        Assert.Contains("Syntax error", line);
     }
 
     [Fact]

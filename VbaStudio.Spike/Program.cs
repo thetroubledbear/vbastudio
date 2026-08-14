@@ -41,7 +41,7 @@ internal class Program
     {
         var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
         var project = excel.ActiveWorkbook.VBProject;
-        var runner = new Runner(excel, project);
+        var runner = new Runner(excel, project, Console.WriteLine);
 
         Console.WriteLine("Compiling...");
         var compileStart = DateTime.UtcNow;

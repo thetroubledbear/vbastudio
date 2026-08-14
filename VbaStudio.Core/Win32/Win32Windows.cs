@@ -24,8 +24,11 @@ public sealed class Win32Windows : IWin32Windows
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
+    // PostMessage, not SendMessage: SendMessage blocks until the target window's thread
+    // pumps the message, so an unresponsive Excel would hang the watcher thread here (and
+    // then hang the runner thread inside DialogWatcher.Stop()). PostMessage queues and returns.
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     private const uint BM_CLICK = 0x00F5;
 
@@ -65,6 +68,6 @@ public sealed class Win32Windows : IWin32Windows
 
     public void Click(IntPtr hwndButton)
     {
-        SendMessage(hwndButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+        PostMessage(hwndButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
     }
 }
