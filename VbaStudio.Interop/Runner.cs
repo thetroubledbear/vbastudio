@@ -1,5 +1,6 @@
 // VbaStudio.Interop/Runner.cs
 using System;
+using System.Runtime.InteropServices;
 using VbaStudio.Core.Excel;
 using VbaStudio.Core.Model;
 using VbaStudio.Core.Win32;
@@ -53,19 +54,37 @@ public sealed class Runner
         // dialog, and M2's contract only promises {module, line, message} for either - not which
         // kind it was - so Run() alone satisfies the exit gate without a separate compile step.
         object? returnValue = null;
+        COMException? runException = null;
         var captured = ExecuteWithWatcher(() =>
         {
-            returnValue = _excel.Run(entryPoint);
+            try
+            {
+                returnValue = _excel.Run(entryPoint);
+            }
+            catch (COMException ex)
+            {
+                // Application.Run does not always report a compile/runtime failure via a dialog -
+                // confirmed empirically: it can also throw a raw COMException straight back to the
+                // automation caller (0x800ADF09 observed against real Excel) with no window ever
+                // appearing for DialogWatcher to see. This must not crash the process uncaught.
+                runException = ex;
+            }
         });
 
         if (captured != null && captured.Caption == VbaErrorCaption)
         {
-            var diagnostic = CorrelateDiagnostic(captured);
+            var diagnostic = CorrelateDiagnostic(captured.Body);
             return new RunResult(false, null, diagnostic);
         }
 
-        // No dialog, or a non-VBA-error dialog (e.g. the macro's own MsgBox, already
-        // dismissed by the watcher): the macro ran to completion, so report its return value.
+        if (runException != null)
+        {
+            var diagnostic = CorrelateDiagnostic(runException.Message);
+            return new RunResult(false, null, diagnostic);
+        }
+
+        // No dialog, no exception, or a non-VBA-error dialog (e.g. the macro's own MsgBox,
+        // already dismissed by the watcher): the macro ran to completion, report its return value.
         return new RunResult(true, returnValue, null);
     }
 
@@ -96,16 +115,17 @@ public sealed class Runner
         return watcher.Captured;
     }
 
-    private Diagnostic CorrelateDiagnostic(CapturedDialog captured)
+    private Diagnostic CorrelateDiagnostic(string message)
     {
-        // The captured body is the one thing we already know; a COM failure while correlating
-        // it to a module/line must degrade to a message-only diagnostic, never lose the message.
+        // The message is the one thing we already know (from a dismissed dialog's body, or a
+        // caught COMException's own message); a COM failure while correlating it to a module/line
+        // must degrade to a message-only diagnostic, never lose the message.
         try
         {
             var pane = _vbe.ActiveCodePane;
             if (pane == null)
             {
-                return new Diagnostic(Module: null, Line: null, captured.Body);
+                return new Diagnostic(Module: null, Line: null, message);
             }
 
             try
@@ -118,7 +138,7 @@ public sealed class Runner
                     {
                         var moduleName = component.Name;
                         pane.GetSelection(out int startLine, out _, out _, out _);
-                        return new Diagnostic(moduleName, startLine, captured.Body);
+                        return new Diagnostic(moduleName, startLine, message);
                     }
                     finally
                     {
@@ -137,8 +157,8 @@ public sealed class Runner
         }
         catch (Exception ex)
         {
-            _log?.Invoke($"Runner: could not correlate the captured dialog to a module/line: {ex.Message}");
-            return new Diagnostic(Module: null, Line: null, captured.Body);
+            _log?.Invoke($"Runner: could not correlate the failure to a module/line: {ex.Message}");
+            return new Diagnostic(Module: null, Line: null, message);
         }
     }
 
