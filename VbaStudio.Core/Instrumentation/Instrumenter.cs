@@ -16,6 +16,14 @@ public sealed record InstrumentResult(
 
 public static class Instrumenter
 {
+    // A "With"/"End With" line is itself always skipped - probing right as we enter or leave
+    // the block reveals nothing a neighboring probe doesn't already show. Every regular line
+    // while withDepth > 0 is skipped too, since the plan explicitly prefers skipping a With
+    // block's body over attempting to capture its target expression (real expression
+    // evaluation this component doesn't have).
+    private static readonly Regex WithPattern = new(@"^\s*With\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex EndWithPattern = new(@"^\s*End\s+With\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static InstrumentResult Instrument(
         string sourceText, ProcedureSymbols procedure, string moduleName, int startingProbeId = 1)
     {
@@ -41,12 +49,35 @@ public static class Instrumenter
         outputLines.Add(headerLine);
 
         var currentId = startingProbeId;
+        var withDepth = 0;
         foreach (var line in joined)
         {
             var stripped = CommentStripper.StripComment(line.Text);
+            var isWithLine = WithPattern.IsMatch(stripped);
+            var isEndWithLine = EndWithPattern.IsMatch(stripped);
+
+            bool skip;
+            if (isWithLine)
+            {
+                skip = true;
+                withDepth++;
+            }
+            else if (isEndWithLine)
+            {
+                skip = true;
+                if (withDepth > 0)
+                {
+                    withDepth--;
+                }
+            }
+            else
+            {
+                skip = withDepth > 0;
+            }
+
             var isBlank = string.IsNullOrWhiteSpace(stripped);
 
-            if (!isBlank)
+            if (!skip && !isBlank)
             {
                 var originalLine = procedure.StartLine + line.StartPhysicalLine;
                 outputLines.Add($"Agent.Probe {currentId}, Array({probeArgs})");

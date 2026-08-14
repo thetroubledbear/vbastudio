@@ -197,4 +197,80 @@ public class InstrumenterTests
         // real (uncommented) statement, immediately preceded by its own probe line.
         Assert.Contains("Agent.Probe 2, Array()\r\n    y = 2", result.InstrumentedSource);
     }
+
+    [Fact]
+    public void Instrument_LinesInsideWithBlock_GetNoProbe()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim total As Long\r\n" +
+                      "    With Sheet1\r\n" +
+                      "        total = 1\r\n" +
+                      "    End With\r\n" +
+                      "    total = 2\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        Assert.Equal(2, result.ProbeSites.Count);
+        Assert.Equal(2, result.ProbeSites[0].OriginalLine);
+        Assert.Equal(6, result.ProbeSites[1].OriginalLine);
+    }
+
+    [Fact]
+    public void Instrument_NestedWithBlocks_AllLevelsSkipped()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    With Sheet1\r\n" +
+                      "        With Sheet1.Range(\"A1\")\r\n" +
+                      "            Value = 1\r\n" +
+                      "        End With\r\n" +
+                      "        Cells(1, 1).Value = 2\r\n" +
+                      "    End With\r\n" +
+                      "    Dim done As Boolean\r\n" +
+                      "    done = True\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        Assert.Equal(2, result.ProbeSites.Count);
+        Assert.Equal(8, result.ProbeSites[0].OriginalLine);
+        Assert.Equal(9, result.ProbeSites[1].OriginalLine);
+    }
+
+    [Fact]
+    public void Instrument_UnterminatedWith_SkipsToEndOfProcedureWithoutThrowing()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    With Sheet1\r\n" +
+                      "        Dim x As Long\r\n" +
+                      "        x = 1\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        Assert.Empty(result.ProbeSites);
+    }
+
+    [Fact]
+    public void Instrument_WithAndEndWithLinesThemselves_NeverGetAProbe()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    With Sheet1\r\n" +
+                      "        Dim x As Long\r\n" +
+                      "    End With\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        Assert.Empty(result.ProbeSites);
+        Assert.DoesNotContain("Agent.Probe", result.InstrumentedSource);
+    }
 }
