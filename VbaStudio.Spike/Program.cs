@@ -21,6 +21,11 @@ internal class Program
             {
                 RunSyncTest();
             }
+            else if (args.Length > 0 && args[0] == "run")
+            {
+                var entryPoint = args.Length > 1 ? args[1] : "modMain.Main";
+                RunCompileAndRun(entryPoint);
+            }
             else
             {
                 RunSpike();
@@ -30,6 +35,37 @@ internal class Program
         {
             ExcelMessageFilter.Revoke();
         }
+    }
+
+    private static void RunCompileAndRun(string entryPoint)
+    {
+        var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
+        var project = excel.ActiveWorkbook.VBProject;
+        var runner = new Runner(excel, project);
+
+        Console.WriteLine("Compiling...");
+        var compileStart = DateTime.UtcNow;
+        var compile = runner.CompileOnly();
+        var compileElapsed = DateTime.UtcNow - compileStart;
+        Console.WriteLine($"Compile finished in {compileElapsed.TotalMilliseconds:F0}ms");
+
+        if (!compile.Success)
+        {
+            var d = compile.Diagnostic!;
+            Console.WriteLine($"COMPILE ERROR: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}");
+            return;
+        }
+
+        Console.WriteLine($"Compile clean. Running {entryPoint}...");
+        var run = runner.Run(entryPoint);
+        if (!run.Success)
+        {
+            var d = run.Diagnostic!;
+            Console.WriteLine($"RUNTIME ERROR: module={d.Module ?? "?"} line={d.Line?.ToString() ?? "?"} message={d.Message}");
+            return;
+        }
+
+        Console.WriteLine($"Run complete. Return value: {run.ReturnValue}");
     }
 
     private static void RunSyncTest()
