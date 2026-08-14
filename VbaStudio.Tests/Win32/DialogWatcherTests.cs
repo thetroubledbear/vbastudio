@@ -166,6 +166,28 @@ public class DialogWatcherTests
     }
 
     [Fact]
+    public void PollOnce_ClickedButDoesNotConfirmClosed_LogsWarningButStillCaptures()
+    {
+        var fake = new FakeWin32Windows();
+        fake.AddTopLevelWindow(new FakeWindow
+        {
+            Handle = (IntPtr)1, Caption = "Microsoft Visual Basic for Applications",
+            ClassName = "#32770", ProcessId = TargetPid
+        });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)10, Caption = "Syntax error", ClassName = "Static", ProcessId = TargetPid });
+        fake.AddChildWindow((IntPtr)1, new FakeWindow { Handle = (IntPtr)12, Caption = "OK", ClassName = "Button", ProcessId = TargetPid });
+        fake.MarkNeverCloses((IntPtr)1);
+
+        var logged = new List<string>();
+        var watcher = new DialogWatcher(fake, TargetPid, logged.Add);
+        watcher.PollOnce();
+
+        Assert.NotNull(watcher.Captured);
+        Assert.Equal(new[] { (IntPtr)12 }, fake.ClickedHandles);
+        Assert.Contains(logged, line => line.Contains("did not confirm closed"));
+    }
+
+    [Fact]
     public void PollOnce_NoMatchingWindow_CapturedStaysNull()
     {
         var fake = new FakeWin32Windows();

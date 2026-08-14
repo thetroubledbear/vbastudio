@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace VbaStudio.Core.Win32;
 
@@ -23,6 +24,9 @@ public sealed class Win32Windows : IWin32Windows
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
 
     // PostMessage, not SendMessage: SendMessage blocks until the target window's thread
     // pumps the message, so an unresponsive Excel would hang the watcher thread here (and
@@ -69,5 +73,21 @@ public sealed class Win32Windows : IWin32Windows
     public void Click(IntPtr hwndButton)
     {
         PostMessage(hwndButton, BM_CLICK, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    public bool WaitForWindowClosed(IntPtr hwnd, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (IsWindow(hwnd))
+        {
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        return true;
     }
 }

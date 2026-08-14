@@ -19,8 +19,12 @@ public sealed class FakeWin32Windows : IWin32Windows
     private readonly Dictionary<IntPtr, FakeWindow> _windows = new();
     private readonly List<IntPtr> _topLevel = new();
     private readonly List<IntPtr> _clickedHandles = new();
+    private readonly HashSet<IntPtr> _neverCloses = new();
 
     public IReadOnlyList<IntPtr> ClickedHandles => _clickedHandles;
+
+    /// <summary>Makes WaitForWindowClosed report the window still open until the timeout elapses.</summary>
+    public void MarkNeverCloses(IntPtr hwnd) => _neverCloses.Add(hwnd);
 
     public void AddTopLevelWindow(FakeWindow window)
     {
@@ -46,4 +50,6 @@ public sealed class FakeWin32Windows : IWin32Windows
     public int GetWindowProcessId(IntPtr hwnd) => _windows[hwnd].ProcessId;
 
     public void Click(IntPtr hwndButton) => _clickedHandles.Add(hwndButton);
+
+    public bool WaitForWindowClosed(IntPtr hwnd, TimeSpan timeout) => !_neverCloses.Contains(hwnd);
 }

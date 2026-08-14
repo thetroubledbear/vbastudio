@@ -14,11 +14,15 @@ public sealed record RunResult(bool Success, object? ReturnValue, Diagnostic? Di
 
 public sealed class Runner
 {
-    private const int CompileVbaProjectControlId = 578;
-
     // Only this caption means "VBA compile/runtime error". A "Microsoft Excel" dialog during
     // Application.Run is typically a MsgBox from the macro itself - dismissed, not a failure.
     private const string VbaErrorCaption = "Microsoft Visual Basic for Applications";
+
+    // The name is deliberately unusual, not fully collision-proof - VBIDE auto-renames on
+    // collision (Add() returns whatever name it actually assigned; we always reference that
+    // returned object, never a name lookup), so a clash only costs an odd module name, nothing
+    // else.
+    private const string CompileCheckProcedureName = "VbaStudioCompileCheck";
 
     private readonly Excel.Application _excel;
     private readonly VBIDE.VBProject _project;
@@ -38,49 +42,68 @@ public sealed class Runner
     {
         EnsureTargetProjectIsActive();
 
-        var captured = ExecuteWithWatcher(() =>
+        // The VBE's own "Compile VBAProject" command (control id 578) does not reliably surface
+        // errors when driven by automation - confirmed empirically: Execute() can return cleanly
+        // in under 100ms on code that does not compile, with no dialog ever appearing. The one
+        // mechanism proven reliable is Application.Run's own implicit "compile the whole project
+        // before executing anything" step. To get a side-effect-free compile check out of that,
+        // inject a throwaway no-op procedure, Run it, then always remove it again.
+        var components = _project.VBComponents;
+        VBComponent checkComponent;
+        try
         {
-            // Control id 578 is a VBE command ("Debug > Compile VBAProject"), so it must be
-            // resolved against the VBE's command bars, not the host application's.
-            var commandBars = _vbe.CommandBars;
+            checkComponent = components.Add(vbext_ComponentType.vbext_ct_StdModule);
+        }
+        finally
+        {
+            ComRelease.Release(components);
+        }
+
+        try
+        {
+            var codeModule = checkComponent.CodeModule;
             try
             {
-                var control = commandBars.FindControl(Id: CompileVbaProjectControlId);
-                if (control == null)
-                {
-                    throw new InvalidOperationException(
-                        $"VBE command {CompileVbaProjectControlId} (Compile VBAProject) not found. " +
-                        "Is 'Trust access to the VBA project object model' enabled?");
-                }
-
-                try
-                {
-                    control.Execute();
-                }
-                finally
-                {
-                    ComRelease.Release(control);
-                }
+                codeModule.AddFromString($"Sub {CompileCheckProcedureName}()\r\nEnd Sub");
             }
             finally
             {
-                ComRelease.Release(commandBars);
+                ComRelease.Release(codeModule);
             }
-        });
 
-        // Any dialog captured during the compile step means the compile failed.
-        var diagnostic = captured == null ? null : CorrelateDiagnostic(captured);
-        return new CompileResult(diagnostic == null, diagnostic);
+            var qualifiedName = $"{checkComponent.Name}.{CompileCheckProcedureName}";
+            var captured = ExecuteWithWatcher(() =>
+            {
+                _excel.Run(qualifiedName);
+            });
+
+            var diagnostic = captured == null ? null : CorrelateDiagnostic(captured);
+            return new CompileResult(diagnostic == null, diagnostic);
+        }
+        finally
+        {
+            var componentsForRemove = _project.VBComponents;
+            try
+            {
+                componentsForRemove.Remove(checkComponent);
+            }
+            finally
+            {
+                ComRelease.Release(componentsForRemove);
+            }
+
+            ComRelease.Release(checkComponent);
+        }
     }
 
     public RunResult Run(string entryPoint)
     {
-        var compile = CompileOnly();
-        if (!compile.Success)
-        {
-            return new RunResult(false, null, compile.Diagnostic);
-        }
+        EnsureTargetProjectIsActive();
 
+        // No separate compile step: Application.Run compiles the whole project as a side effect
+        // before executing anything, which is the one mechanism proven reliable (see CompileOnly).
+        // A compile failure and a genuine runtime error surface through the identical dialog, and
+        // M2's contract only promises {module, line, message} for either - not which kind it was.
         object? returnValue = null;
         var captured = ExecuteWithWatcher(() =>
         {
@@ -138,24 +161,31 @@ public sealed class Runner
                 return new Diagnostic(Module: null, Line: null, captured.Body);
             }
 
-            var module = pane.CodeModule;
             try
             {
-                var component = module.Parent;
+                var module = pane.CodeModule;
                 try
                 {
-                    var moduleName = component.Name;
-                    pane.GetSelection(out int startLine, out _, out _, out _);
-                    return new Diagnostic(moduleName, startLine, captured.Body);
+                    var component = module.Parent;
+                    try
+                    {
+                        var moduleName = component.Name;
+                        pane.GetSelection(out int startLine, out _, out _, out _);
+                        return new Diagnostic(moduleName, startLine, captured.Body);
+                    }
+                    finally
+                    {
+                        ComRelease.Release(component);
+                    }
                 }
                 finally
                 {
-                    ComRelease.Release(component);
+                    ComRelease.Release(module);
                 }
             }
             finally
             {
-                ComRelease.Release(module, pane);
+                ComRelease.Release(pane);
             }
         }
         catch (Exception ex)

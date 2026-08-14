@@ -14,6 +14,12 @@ public sealed class DialogWatcher
 
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(2);
 
+    // Click() posts asynchronously (never blocks - a hung Excel must not hang this thread).
+    // This bounds how long a single poll tick waits for the dialog to actually disappear before
+    // moving on. Without it, the next operation's watcher can catch the same window still
+    // closing and misreport it as a fresh failure - the dismissal race this class exists to close.
+    private static readonly TimeSpan DismissConfirmTimeout = TimeSpan.FromSeconds(1);
+
     private static readonly HashSet<string> WatchedCaptions = new(StringComparer.Ordinal)
     {
         "Microsoft Visual Basic for Applications",
@@ -166,6 +172,13 @@ public sealed class DialogWatcher
             if (buttonHandle != IntPtr.Zero)
             {
                 _windows.Click(buttonHandle);
+
+                if (!_windows.WaitForWindowClosed(hwnd, DismissConfirmTimeout))
+                {
+                    _log?.Invoke(
+                        $"DialogWatcher: dialog did not confirm closed within {DismissConfirmTimeout.TotalSeconds:F0}s " +
+                        "after dismissal - a later operation may catch it as stale.");
+                }
             }
         }
     }
