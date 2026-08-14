@@ -38,7 +38,8 @@ public static class VbaParser
             var startLine = joined[i].StartPhysicalLine;
 
             var endLine = joined[i].EndPhysicalLine;
-            var j = i + 1;
+            var bodyStart = i + 1;
+            var j = bodyStart;
             while (j < joined.Count)
             {
                 endLine = joined[j].EndPhysicalLine;
@@ -50,13 +51,19 @@ public static class VbaParser
                 j++;
             }
 
+            var locals = new List<Symbol>();
+            for (var bodyIndex = bodyStart; bodyIndex < j && bodyIndex < joined.Count; bodyIndex++)
+            {
+                locals.AddRange(ParseDeclarationLine(clean[bodyIndex], ProcedureDeclarationPattern, SymbolKind.Local));
+            }
+
             procedures.Add(new ProcedureSymbols(
                 name,
                 kind,
                 startLine,
                 endLine,
                 Parameters: ParseParameters(headerMatch.Groups["params"].Value),
-                Locals: System.Array.Empty<Symbol>()));
+                Locals: locals));
 
             i = j + 1;
         }
@@ -138,6 +145,59 @@ public static class VbaParser
 
     private static string NormalizeKeyword(string raw) =>
         raw.Equals("ByVal", System.StringComparison.OrdinalIgnoreCase) ? "ByVal" : "ByRef";
+
+    private static readonly Regex ProcedureDeclarationPattern = new(
+        @"^\s*(?<kw>Dim|Static|Const)\s+(?<rest>.+)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex DeclaredVariablePattern = new(
+        @"^\s*(?<name>\w+)\s*(?<array>\(\s*[\w,\s]*\s*\))?\s*(?:As\s+(?<type>[\w.]+))?\s*(?:=.*)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static IReadOnlyList<Symbol> ParseDeclarationLine(string line, Regex declarationPattern, SymbolKind nonConstKind)
+    {
+        var match = declarationPattern.Match(line);
+        if (!match.Success)
+        {
+            return System.Array.Empty<Symbol>();
+        }
+
+        var kw = match.Groups["kw"].Value;
+        var kind = kw.Equals("Const", System.StringComparison.OrdinalIgnoreCase) ? SymbolKind.Const : nonConstKind;
+
+        return ParseDeclaredVariables(match.Groups["rest"].Value, kind);
+    }
+
+    private static IReadOnlyList<Symbol> ParseDeclaredVariables(string rawDeclarations, SymbolKind kind)
+    {
+        var results = new List<Symbol>();
+        foreach (var segment in SplitTopLevel(rawDeclarations, ','))
+        {
+            var trimmed = segment.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            var match = DeclaredVariablePattern.Match(trimmed);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var declaredType = match.Groups["type"].Success ? match.Groups["type"].Value : "Variant";
+
+            results.Add(new Symbol(
+                match.Groups["name"].Value,
+                declaredType,
+                kind,
+                IsArray: match.Groups["array"].Success,
+                IsOptional: false,
+                PassingMode: null));
+        }
+
+        return results;
+    }
 
     private static IReadOnlyList<string> SplitTopLevel(string text, char separator)
     {

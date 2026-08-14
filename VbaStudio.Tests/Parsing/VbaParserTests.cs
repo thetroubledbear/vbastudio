@@ -170,7 +170,7 @@ public class VbaParserTests
     }
 
     [Fact]
-    public void ParseModule_EveryProcedure_HasEmptyLocalsForNow()
+    public void ParseModule_ProcedureWithParametersAndLocals_PopulatesBoth()
     {
         var source = "Public Sub DoWork(a As Long)\r\n" +
                       "    Dim x As Long\r\n" +
@@ -180,7 +180,10 @@ public class VbaParserTests
 
         var proc = Assert.Single(result.Procedures);
         Assert.NotEmpty(proc.Parameters);
-        Assert.Empty(proc.Locals);
+        var local = Assert.Single(proc.Locals);
+        Assert.Equal("x", local.Name);
+        Assert.Equal("Long", local.DeclaredType);
+        Assert.Equal(SymbolKind.Local, local.Kind);
     }
 
     [Fact]
@@ -304,5 +307,136 @@ public class VbaParserTests
         Assert.Equal("b", proc.Parameters[1].Name);
         Assert.Equal(1, proc.StartLine);
         Assert.Equal(3, proc.EndLine);
+    }
+
+    [Fact]
+    public void ParseModule_SingleDimDeclaration_ProducesOneLocal()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim total As Long\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("total", local.Name);
+        Assert.Equal("Long", local.DeclaredType);
+        Assert.Equal(SymbolKind.Local, local.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_MultiVariableDimLine_ProducesOneLocalPerVariable()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim a As Long, b As String\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var locals = result.Procedures.Single().Locals;
+        Assert.Equal(2, locals.Count);
+        Assert.Equal("a", locals[0].Name);
+        Assert.Equal("Long", locals[0].DeclaredType);
+        Assert.Equal("b", locals[1].Name);
+        Assert.Equal("String", locals[1].DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_StaticDeclaration_ProducesLocalKindLocal()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Static counter As Long\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("counter", local.Name);
+        Assert.Equal(SymbolKind.Local, local.Kind);
+    }
+
+    [Fact]
+    public void ParseModule_ConstDeclaration_ProducesKindConst()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Const Max As Long = 100\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("Max", local.Name);
+        Assert.Equal(SymbolKind.Const, local.Kind);
+        Assert.Equal("Long", local.DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_ArrayDeclaration_SetsIsArrayTrue()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim values(10) As Long\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("values", local.Name);
+        Assert.True(local.IsArray);
+        Assert.Equal("Long", local.DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_DynamicArrayDeclaration_SetsIsArrayTrue()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim values() As Long\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.True(local.IsArray);
+    }
+
+    [Fact]
+    public void ParseModule_UntypedDim_DefaultsToVariant()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim anything\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("Variant", local.DeclaredType);
+    }
+
+    [Fact]
+    public void ParseModule_NonDeclarationLinesInsideBody_AreSkippedNotErrored()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim x As Long\r\n" +
+                      "    x = 5\r\n" +
+                      "    If x > 0 Then\r\n" +
+                      "        x = x + 1\r\n" +
+                      "    End If\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var local = Assert.Single(result.Procedures.Single().Locals);
+        Assert.Equal("x", local.Name);
+    }
+
+    [Fact]
+    public void ParseModule_NoLocalsInBody_ReturnsEmptyLocalsList()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    DoSomethingElse\r\n" +
+                      "End Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        Assert.Empty(result.Procedures.Single().Locals);
     }
 }
