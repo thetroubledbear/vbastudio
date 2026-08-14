@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using VbaStudio.Core.Dap;
 using Xunit;
 
