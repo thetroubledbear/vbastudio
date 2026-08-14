@@ -79,7 +79,21 @@ public sealed class ProbeServer : IDisposable
                 break;
             }
 
-            HandleRequest(context);
+            try
+            {
+                HandleRequest(context);
+            }
+            catch (Exception ex)
+            {
+                // The response-writing section of HandleRequest runs outside its own internal
+                // try/catch (which only covers body-reading/parsing/dispatch). If the client has
+                // already vanished (VBA-side timeout, Excel crash, or Stop() racing an in-flight
+                // write against Dispose()'s listener Close()), OutputStream.Write/Close can throw.
+                // An unhandled exception on a background thread would terminate the whole process,
+                // which is worse than the single-probe hang this server exists to avoid - so catch,
+                // log, and keep serving the next request instead of letting it propagate.
+                _log?.Invoke($"ProbeServer: unhandled exception in HandleRequest, continuing loop: {ex.Message}");
+            }
         }
     }
 

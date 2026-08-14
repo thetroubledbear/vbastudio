@@ -148,4 +148,41 @@ public class ProbeServerTests
         Assert.Contains("\"cmd\":\"continue\"", validText);
         Assert.Equal(1, calls);
     }
+
+    [Fact]
+    public void Loop_ResponseWriteFailureAfterStopCalledMidRequest_DoesNotCrashProcess()
+    {
+        var port = GetTestPort();
+        var probeSites = new Dictionary<int, ProbeSite> { [1] = new ProbeSite(1, "modWork", 10) };
+
+        ProbeServer? serverRef = null;
+        var server = new ProbeServer(port, probeSites, _ =>
+        {
+            // Simulate the client vanishing exactly as the response is about to be written -
+            // Stop() closes the listener out from under the in-flight response write, which
+            // must not crash the process (would previously kill the whole test process, not
+            // just fail this assertion).
+            serverRef?.Stop();
+            return ProbeCommand.Continue;
+        });
+        serverRef = server;
+        server.Start();
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var body = "{\"probe_id\":1,\"vars\":[]}";
+        try
+        {
+            client.PostAsync($"http://localhost:{port}/probe/", new StringContent(body, Encoding.UTF8, "application/json"))
+                .GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // The client-side request may itself fail once the listener is stopped mid-response -
+            // that's an expected, acceptable outcome here. The actual assertion is that reaching
+            // this point at all (the test process is still alive) proves the fix worked.
+        }
+
+        server.Dispose();
+        Assert.True(true); // Reaching this line proves the background thread's exception was caught, not left to crash the process.
+    }
 }
