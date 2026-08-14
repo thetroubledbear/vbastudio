@@ -43,13 +43,20 @@ public sealed class DapSession
         _output = output;
     }
 
-    // Runs the whole session on the CALLING thread. Excel's VBA execution engine is not safe to
-    // drive from more than one .NET thread in the process, even where the second thread never
-    // itself touches COM - confirmed live: giving DebugSession.Run its own Thread.Start() (or
-    // even just having an otherwise-idle second thread block on reading stdin while
-    // Application.Run was in flight on this thread) made Application.Run fail intermittently
-    // with a spurious VBA "Out of memory" error or a NullReferenceException deep in the interop
-    // marshaling, on an unpredictable subset of runs. Removing every extra thread eliminated it.
+    // Runs the whole session on the CALLING thread - the same [STAThread] thread that created
+    // _excel/_workbook. Application.Run (called deep inside DebugSession.Run, below) must be
+    // invoked on that same STA thread: confirmed live that the earlier design - giving
+    // DebugSession.Run its own Thread.Start(), with no ApartmentState.STA set - made Excel's
+    // Application.Run fail intermittently (a spurious VBA "Out of memory" error, or a
+    // NullReferenceException deep in COM marshaling) on an unpredictable subset of runs. The
+    // mechanism: an MTA thread calling into an STA-owned RCW needs the owning STA thread's
+    // message pump to service the cross-apartment call, and this process's STA thread was
+    // blocked in a plain, non-pumping input.ReadByte() at the time - so the call had nothing to
+    // service it. Calling Application.Run directly on the STA thread removes the cross-apartment
+    // hop entirely (this is NOT a "never touch a second thread" rule - ProbeServer's own
+    // pre-existing callback thread, and DialogWatcher's polling thread, both already run
+    // concurrently with Application.Run without issue, since neither makes a blocking call INTO
+    // the STA thread's own RCWs while that thread sits non-pumping).
     // So the whole session - reading DAP requests before the run starts, running
     // DebugSession.Run, and reading further DAP requests (stackTrace/scopes/variables/continue)
     // while a probe is paused mid-run via OnProbe's own nested read loop below - all happens on
@@ -102,7 +109,13 @@ public sealed class DapSession
             case "terminate":
                 // Only meaningful here if it arrives before configurationDone (nothing is running
                 // yet). Once running, disconnect/terminate is intercepted inline by OnProbe's own
-                // read loop while a probe is paused - see OnProbe below.
+                // read loop, but only while a probe is actually paused - see OnProbe below. If the
+                // client disconnects while the procedure is running but no breakpoint is currently
+                // hit, nobody is reading stdin at that moment (this thread is blocked inside
+                // Application.Run) - the message sits unread until the next pause or until the run
+                // finishes on its own. Accepted for M6a's scope (exit gate is "breakpoint,
+                // variables pane", not mid-flight cancellation); a real client would time out and
+                // kill the process rather than hang indefinitely.
                 SendResponse(request, null);
                 break;
             case "stackTrace":
