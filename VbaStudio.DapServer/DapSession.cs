@@ -1,10 +1,12 @@
 // VbaStudio.DapServer/DapSession.cs
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using VbaStudio.Core.Dap;
+using VbaStudio.Core.Debug;
 using VbaStudio.Core.Model;
 using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -14,6 +16,8 @@ namespace VbaStudio.DapServer;
 public sealed class DapSession
 {
     private const int ThreadId = 1;
+    private const int FrameId = 1;
+    private const int ScopeVariablesReference = 1;
 
     private readonly Excel.Application _excel;
     private readonly Excel.Workbook _workbook;
@@ -28,6 +32,10 @@ public sealed class DapSession
 
     private readonly object _breakpointsLock = new();
     private readonly HashSet<(string Module, int Line)> _breakpoints = new();
+
+    private readonly ManualResetEventSlim _continueSignal = new(false);
+    private ProbeCommand _pendingCommand = ProbeCommand.Continue;
+    private volatile ProbeEvent? _currentProbe;
 
     public DapSession(Excel.Application excel, Excel.Workbook workbook, string shadowPath, Stream output)
     {
@@ -59,6 +67,18 @@ public sealed class DapSession
             case "disconnect":
             case "terminate":
                 HandleDisconnect(request);
+                break;
+            case "stackTrace":
+                HandleStackTrace(request);
+                break;
+            case "scopes":
+                HandleScopes(request);
+                break;
+            case "variables":
+                HandleVariables(request);
+                break;
+            case "continue":
+                HandleContinue(request);
                 break;
             default:
                 SendErrorResponse(request, $"Unknown or not-yet-implemented command: {request.Command}");
@@ -115,11 +135,96 @@ public sealed class DapSession
     private void HandleConfigurationDone(DapRequest request)
     {
         SendResponse(request, null);
+
+        var thread = new Thread(RunDebugSession) { IsBackground = true };
+        thread.Start();
     }
 
     private void HandleDisconnect(DapRequest request)
     {
         SendResponse(request, null);
+        _pendingCommand = ProbeCommand.Abort;
+        _continueSignal.Set();
+    }
+
+    private void RunDebugSession()
+    {
+        // An unhandled exception on this background thread would crash the entire process -
+        // confirmed the hard way in M5b's own Task 1 fix (ProbeServer's response-write path).
+        // Never let a session failure escape uncaught here.
+        try
+        {
+            var debugSession = new DebugSession();
+            debugSession.Run(
+                _excel, _workbook, _shadowPath, _launchModule!, _launchEntryPoint!,
+                OnProbe,
+                log => SendEvent("output", new OutputEventBody("console", log + "\n")));
+
+            SendEvent("terminated", null);
+        }
+        catch (Exception ex)
+        {
+            SendEvent("output", new OutputEventBody("stderr", $"Debug session failed: {ex.Message}\n"));
+            SendEvent("terminated", null);
+        }
+    }
+
+    private ProbeCommand OnProbe(ProbeEvent probeEvent)
+    {
+        bool isBreakpoint;
+        lock (_breakpointsLock)
+        {
+            isBreakpoint = _breakpoints.Contains((probeEvent.ModuleName, probeEvent.OriginalLine));
+        }
+
+        if (!isBreakpoint)
+        {
+            return ProbeCommand.Continue;
+        }
+
+        _currentProbe = probeEvent;
+        _continueSignal.Reset();
+
+        SendEvent("stopped", new StoppedEventBody("breakpoint", ThreadId, null));
+
+        _continueSignal.Wait();
+        return _pendingCommand;
+    }
+
+    private void HandleStackTrace(DapRequest request)
+    {
+        var probe = _currentProbe;
+        if (probe == null)
+        {
+            SendResponse(request, new StackTraceResponseBody(Array.Empty<DapStackFrame>()));
+            return;
+        }
+
+        var path = _moduleFilePaths.TryGetValue(probe.ModuleName, out var p) ? p : probe.ModuleName;
+        var frame = new DapStackFrame(FrameId, probe.ModuleName, new DapSource(path), probe.OriginalLine, 1);
+        SendResponse(request, new StackTraceResponseBody(new[] { frame }));
+    }
+
+    private void HandleScopes(DapRequest request)
+    {
+        var scope = new DapScope("Locals", ScopeVariablesReference, Expensive: false);
+        SendResponse(request, new ScopesResponseBody(new[] { scope }));
+    }
+
+    private void HandleVariables(DapRequest request)
+    {
+        var probe = _currentProbe;
+        var variables = probe?.Variables
+            .Select(v => new DapVariable(v.Name, v.Value, v.Type, 0))
+            .ToArray() ?? Array.Empty<DapVariable>();
+        SendResponse(request, new VariablesResponseBody(variables));
+    }
+
+    private void HandleContinue(DapRequest request)
+    {
+        SendResponse(request, new ContinueResponseBody(true));
+        _pendingCommand = ProbeCommand.Continue;
+        _continueSignal.Set();
     }
 
     private void SendResponse(DapRequest request, object? body)
