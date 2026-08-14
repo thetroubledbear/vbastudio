@@ -1,5 +1,6 @@
 // VbaStudio.Core/Parsing/VbaParser.cs
 using System.Collections.Generic;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -287,5 +288,30 @@ public static class VbaParser
 
         parts.Add(text.Substring(start));
         return parts;
+    }
+
+    private static readonly string[] SourceSubfolders = { "Modules", "Classes", "Forms", "Sheets" };
+
+    public static IReadOnlyList<ModuleSymbols> ParseProject(IFileSystem fileSystem, string srcDir)
+    {
+        var results = new List<ModuleSymbols>();
+
+        foreach (var subfolder in SourceSubfolders)
+        {
+            var folder = fileSystem.Path.Combine(srcDir, subfolder);
+            if (!fileSystem.Directory.Exists(folder))
+            {
+                continue;
+            }
+
+            foreach (var path in fileSystem.Directory.EnumerateFiles(folder))
+            {
+                var moduleName = fileSystem.Path.GetFileNameWithoutExtension(path);
+                var sourceText = fileSystem.File.ReadAllText(path);
+                results.Add(ParseModule(sourceText, moduleName));
+            }
+        }
+
+        return results;
     }
 }
