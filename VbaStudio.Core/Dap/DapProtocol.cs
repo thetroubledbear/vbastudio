@@ -49,7 +49,11 @@ public static class DapProtocol
             var root = doc.RootElement;
             var seq = root.GetProperty("seq").GetInt32();
             var command = root.GetProperty("command").GetString() ?? "";
-            JsonElement? arguments = root.TryGetProperty("arguments", out var argsEl) ? argsEl.Clone() : null;
+            JsonElement? arguments = null;
+            if (root.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind != JsonValueKind.Null)
+            {
+                arguments = argsEl.Clone();
+            }
             return new DapRequest(seq, command, arguments);
         }
         catch (JsonException)
