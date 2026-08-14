@@ -47,7 +47,19 @@ internal class Program
         // Runner.Run()'s comment for why: it is the only compile-check mechanism proven reliable.
         Console.WriteLine($"Running {entryPoint}...");
         var start = DateTime.UtcNow;
-        var run = runner.Run(entryPoint);
+        RunResult run;
+        try
+        {
+            run = runner.Run(entryPoint);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // EnsureTargetProjectIsActive / EnsureProjectIsInDesignMode refusing a precondition -
+            // no COM call was attempted, nothing to clean up. A stack trace here would be noise;
+            // the message already says exactly what to do.
+            Console.WriteLine($"REFUSED: {ex.Message}");
+            return;
+        }
         var elapsed = DateTime.UtcNow - start;
         Console.WriteLine($"Finished in {elapsed.TotalMilliseconds:F0}ms");
 
