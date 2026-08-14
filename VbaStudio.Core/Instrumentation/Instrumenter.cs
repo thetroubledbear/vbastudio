@@ -48,7 +48,12 @@ public static class Instrumenter
         // free - there is never a sub-line position for a probe to land on.
         var joined = JoinPreservingComments(bodySlice);
 
-        var probeArgs = BuildProbeArgs(procedure);
+        // Parameters are valid from procedure entry, but a local is only valid to reference
+        // from its own Dim/Static/Const line onward - Option Explicit makes VBA reject a
+        // forward reference to a not-yet-declared local as a compile error, confirmed live
+        // against real Excel. inScope grows as declaration lines are passed, so each probe
+        // only ever names variables that are actually in scope at that point.
+        var inScope = new List<Symbol>(procedure.Parameters);
         var probeSites = new List<ProbeSite>();
         var outputLines = new List<string>();
         outputLines.AddRange(physicalLines.Take(procedure.StartLine - 1));
@@ -119,9 +124,17 @@ public static class Instrumenter
                 // unique across an entire instrumentation run via the NextProbeId chaining
                 // mechanism. Array() with zero arguments (a procedure with no parameters or
                 // locals) is a legitimate, valid emission, not a bug.
-                outputLines.Add($"Agent.Probe {currentId}, Array({probeArgs})");
+                outputLines.Add($"Agent.Probe {currentId}, Array({BuildProbeArgs(inScope)})");
                 probeSites.Add(new ProbeSite(currentId, moduleName, originalLine));
                 currentId++;
+            }
+
+            // Even a line whose probe was suppressed (skip/isBlank) still lexically declares
+            // its variables for the rest of the procedure, so this runs unconditionally.
+            var declaredHere = VbaParser.ParseDeclarationLine(stripped, VbaParser.ProcedureDeclarationPattern, SymbolKind.Local);
+            if (declaredHere.Count > 0)
+            {
+                inScope.AddRange(declaredHere);
             }
 
             if (isSelectCaseLine)
@@ -181,10 +194,10 @@ public static class Instrumenter
         return result;
     }
 
-    private static string BuildProbeArgs(ProcedureSymbols procedure)
+    private static string BuildProbeArgs(IReadOnlyList<Symbol> symbols)
     {
         var parts = new List<string>();
-        foreach (var symbol in procedure.Parameters.Concat(procedure.Locals))
+        foreach (var symbol in symbols)
         {
             parts.Add($"\"{symbol.Name}\", {symbol.Name}");
         }

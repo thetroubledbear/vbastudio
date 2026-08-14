@@ -176,7 +176,7 @@ public static class VbaParser
     private static string NormalizeKeyword(string raw) =>
         raw.Equals("ByVal", System.StringComparison.OrdinalIgnoreCase) ? "ByVal" : "ByRef";
 
-    private static readonly Regex ProcedureDeclarationPattern = new(
+    internal static readonly Regex ProcedureDeclarationPattern = new(
         @"^\s*(?<kw>Dim|Static|Const)\s+(?<rest>.+)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -235,7 +235,7 @@ public static class VbaParser
         @"^\s*(?:WithEvents\s+)?(?<name>\w+)\s*(?<array>\(\s*[\w,\s]*\s*\))?\s*(?:As\s+(?:New\s+)?(?<type>[\w.]+))?\s*(?:=.*)?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static IReadOnlyList<Symbol> ParseDeclarationLine(string line, Regex declarationPattern, SymbolKind nonConstKind)
+    internal static IReadOnlyList<Symbol> ParseDeclarationLine(string line, Regex declarationPattern, SymbolKind nonConstKind)
     {
         var match = declarationPattern.Match(line);
         if (!match.Success)

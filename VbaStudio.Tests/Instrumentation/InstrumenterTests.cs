@@ -22,7 +22,7 @@ public class InstrumenterTests
         var result = Instrumenter.Instrument(source, procedure, "modWork");
 
         var expected = "Public Sub DoWork(a As Long)\r\n" +
-                        "Agent.Probe 1, Array(\"a\", a, \"total\", total)\r\n" +
+                        "Agent.Probe 1, Array(\"a\", a)\r\n" +
                         "    Dim total As Long\r\n" +
                         "Agent.Probe 2, Array(\"a\", a, \"total\", total)\r\n" +
                         "    total = a + 1\r\n" +
@@ -60,7 +60,14 @@ public class InstrumenterTests
 
         var result = Instrumenter.Instrument(source, procedure, "modWork");
 
-        Assert.Contains("Array(\"x\", x, \"y\", y, \"total\", total, \"label\", label)", result.InstrumentedSource);
+        var lines = result.InstrumentedSource.Split(new[] { "\r\n" }, System.StringSplitOptions.None);
+        // Probe before "Dim total As Long" - only the parameters are in scope so far.
+        Assert.Equal("Agent.Probe 1, Array(\"x\", x, \"y\", y)", lines[1]);
+        // Probe before "Dim label As String" - total's Dim has been passed, label's has not.
+        Assert.Equal("Agent.Probe 2, Array(\"x\", x, \"y\", y, \"total\", total)", lines[3]);
+        // Probe before "total = x" - both Dim lines have been passed, so all four are in scope,
+        // still in the same parameters-then-locals-in-declaration-order that gives this test its name.
+        Assert.Equal("Agent.Probe 3, Array(\"x\", x, \"y\", y, \"total\", total, \"label\", label)", lines[5]);
     }
 
     [Fact]
@@ -315,5 +322,27 @@ public class InstrumenterTests
         // suppressed "x = 2" too - this pins that it no longer does.
         Assert.Equal(3, result.ProbeSites.Count);
         Assert.Equal(new[] { 2, 4, 5 }, result.ProbeSites.Select(p => p.OriginalLine));
+    }
+
+    [Fact]
+    public void Instrument_ProbeBeforeDeclaration_DoesNotReferenceNotYetDeclaredLocal()
+    {
+        var source = "Public Sub DoWork()\r\n" +
+                      "    Dim x As Long\r\n" +
+                      "    Dim y As Long\r\n" +
+                      "    x = 1\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        var lines = result.InstrumentedSource.Split(new[] { "\r\n" }, System.StringSplitOptions.None);
+        // Probe before "Dim x As Long" - nothing declared yet.
+        Assert.Equal("Agent.Probe 1, Array()", lines[1]);
+        // Probe before "Dim y As Long" - only x has been declared so far.
+        Assert.Equal("Agent.Probe 2, Array(\"x\", x)", lines[3]);
+        // Probe before "x = 1" - both x and y are now declared.
+        Assert.Equal("Agent.Probe 3, Array(\"x\", x, \"y\", y)", lines[5]);
     }
 }
