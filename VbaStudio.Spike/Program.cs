@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO.Abstractions;
+using VbaStudio.Core.Debug;
 using VbaStudio.Core.Excel;
 using VbaStudio.Core.Sync;
 using VbaStudio.Core.Testing;
@@ -30,6 +31,11 @@ internal class Program
             else if (args.Length > 0 && args[0] == "test")
             {
                 RunTests();
+            }
+            else if (args.Length > 0 && args[0] == "debug")
+            {
+                var qualifiedName = args.Length > 1 ? args[1] : "modMain.Main";
+                RunDebug(qualifiedName);
             }
             else
             {
@@ -137,6 +143,43 @@ internal class Program
         }
 
         Console.WriteLine($"{passed} passed, {failed} failed, {skipped} skipped, {results.Count} total");
+    }
+
+    private static void RunDebug(string qualifiedName)
+    {
+        var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
+        var workbook = excel.ActiveWorkbook;
+        var moduleName = qualifiedName.Substring(0, qualifiedName.LastIndexOf('.'));
+
+        var workbookDir = System.IO.Path.GetDirectoryName(workbook.FullName) ?? ".";
+        var shadowPath = System.IO.Path.Combine(workbookDir, "build", "shadow.xlsm");
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(shadowPath)!);
+
+        var session = new DebugSession();
+
+        ProbeCommand OnProbe(ProbeEvent probeEvent)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"--- Paused at {probeEvent.ModuleName}:{probeEvent.OriginalLine} (probe {probeEvent.ProbeId}) ---");
+            foreach (var v in probeEvent.Variables)
+            {
+                Console.WriteLine($"  {v.Name} As {v.Type} = {v.Value}");
+            }
+            Console.Write("Enter to continue, 'abort' to stop: ");
+            var input = Console.ReadLine();
+            return string.Equals(input, "abort", StringComparison.OrdinalIgnoreCase)
+                ? ProbeCommand.Abort
+                : ProbeCommand.Continue;
+        }
+
+        var result = session.Run(excel, workbook, shadowPath, moduleName, qualifiedName, OnProbe, Console.WriteLine);
+
+        Console.WriteLine();
+        Console.WriteLine($"Debug session finished. {result.ProbesFired.Count} probe(s) fired. Run.Success={result.Run.Success}");
+        if (!result.Run.Success)
+        {
+            Console.WriteLine($"Run diagnostic: {result.Run.Diagnostic?.Message}");
+        }
     }
 
     private static void RunSpike()
