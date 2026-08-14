@@ -20,9 +20,14 @@ public sealed class DialogWatcher
     // closing and misreport it as a fresh failure - the dismissal race this class exists to close.
     private static readonly TimeSpan DismissConfirmTimeout = TimeSpan.FromSeconds(1);
 
+    // Confirmed live (2026-08-14): a VBA *runtime*-error dialog (e.g. from Err.Raise) is captioned
+    // "Microsoft Visual Basic" - without "for Applications" - a different caption than the
+    // compile-error dialog. Both must be watched or a runtime error's dialog sits undismissed
+    // forever, wedging the VBE and failing every subsequent Run() call.
     private static readonly HashSet<string> WatchedCaptions = new(StringComparer.Ordinal)
     {
         "Microsoft Visual Basic for Applications",
+        "Microsoft Visual Basic",
         "Microsoft Excel"
     };
 
@@ -126,6 +131,7 @@ public sealed class DialogWatcher
             var bodyParts = new List<string>();
             var firstButton = IntPtr.Zero;
             var okButton = IntPtr.Zero;
+            var endButton = IntPtr.Zero;
 
             foreach (var child in _windows.EnumerateChildWindows(hwnd))
             {
@@ -141,16 +147,22 @@ public sealed class DialogWatcher
                         firstButton = child;
                     }
 
-                    if (okButton == IntPtr.Zero)
+                    // Children come back in Z-order, not OK-first order, and the VBA
+                    // compile-error dialog also has a Help button - clicking Help would
+                    // leave the dialog up, which is the hang this watcher exists to prevent.
+                    var childText = _windows.GetWindowText(child);
+                    if (okButton == IntPtr.Zero && (childText == "OK" || childText == "&OK"))
                     {
-                        // Children come back in Z-order, not OK-first order, and the VBA
-                        // compile-error dialog also has a Help button - clicking Help would
-                        // leave the dialog up, which is the hang this watcher exists to prevent.
-                        var childText = _windows.GetWindowText(child);
-                        if (childText == "OK" || childText == "&OK")
-                        {
-                            okButton = child;
-                        }
+                        okButton = child;
+                    }
+
+                    // The runtime-error dialog ("Microsoft Visual Basic" caption) has no OK
+                    // button - its set is Continue/End/Debug/Help, with Continue first by
+                    // Z-order. Falling back to firstButton there would click Continue (resumes
+                    // into undefined further execution) instead of ending the run cleanly.
+                    if (endButton == IntPtr.Zero && (childText == "End" || childText == "&End"))
+                    {
+                        endButton = child;
                     }
                 }
             }
@@ -162,7 +174,9 @@ public sealed class DialogWatcher
                 _captured = new CapturedDialog(caption, body);
             }
 
-            var buttonHandle = okButton != IntPtr.Zero ? okButton : firstButton;
+            var buttonHandle = okButton != IntPtr.Zero ? okButton
+                : endButton != IntPtr.Zero ? endButton
+                : firstButton;
 
             // Log every caption match - known or unrecognized shape - before dismissing.
             _log?.Invoke(

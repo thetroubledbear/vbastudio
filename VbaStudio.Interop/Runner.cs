@@ -1,5 +1,6 @@
 // VbaStudio.Interop/Runner.cs
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using VbaStudio.Core.Excel;
 using VbaStudio.Core.Model;
@@ -14,9 +15,29 @@ public sealed record RunResult(bool Success, object? ReturnValue, Diagnostic? Di
 
 public sealed class Runner
 {
-    // Only this caption means "VBA compile/runtime error". A "Microsoft Excel" dialog during
+    // Only these captions mean "VBA compile/runtime error". A "Microsoft Excel" dialog during
     // Application.Run is typically a MsgBox from the macro itself - dismissed, not a failure.
-    private const string VbaErrorCaption = "Microsoft Visual Basic for Applications";
+    // Confirmed live (2026-08-14): a compile-error dialog is captioned "Microsoft Visual Basic
+    // for Applications", but a runtime-error dialog (e.g. Err.Raise, which is how clsAssert
+    // reports a failing assertion) is captioned "Microsoft Visual Basic" - without "for
+    // Applications". Both must be recognized or a failing test's dialog gets dismissed by
+    // DialogWatcher but never classified as a failure by Run().
+    private static readonly HashSet<string> VbaErrorCaptions = new(StringComparer.Ordinal)
+    {
+        "Microsoft Visual Basic for Applications",
+        "Microsoft Visual Basic"
+    };
+
+    // VBIDE.vbext_VBAMode's *documented* contract (stable since VBA6): Design=0, Run=1, Break=2.
+    // Confirmed live (2026-08-14): on this machine, tlbimp generated the vbext_VBAMode enum with
+    // its member NAMES mismatched against that contract - VBProject.Mode genuinely returns raw 0
+    // for a project sitting untouched in Design mode (cross-checked against PowerShell's late-
+    // bound COM read of the same live object, which has no local enum to mislabel), but the
+    // locally-generated vbext_VBAMode.vbext_vm_Design constant does not equal 0, so comparing
+    // against the named enum member always fails - the M2 precondition guard was refusing every
+    // clean project, not just genuinely stuck ones. Comparing the raw integer against the
+    // documented contract's value sidesteps whatever tlbimp got wrong for this VBIDE version.
+    private const int DesignModeValue = 0;
 
     private readonly Excel.Application _excel;
     private readonly VBIDE.VBProject _project;
@@ -35,7 +56,7 @@ public sealed class Runner
     public RunResult Run(string entryPoint)
     {
         EnsureTargetProjectIsActive();
-        EnsureProjectIsInDesignMode();
+        WarnIfNotInDesignMode();
 
         // There is no reliable side-effect-free compile check via automation in this VBE version.
         // Two approaches were tried and both failed against real Excel:
@@ -79,7 +100,7 @@ public sealed class Runner
         // clear signal, not walking into a silent trap.
         LogIfNotBackInDesignMode();
 
-        if (captured != null && captured.Caption == VbaErrorCaption)
+        if (captured != null && VbaErrorCaptions.Contains(captured.Caption))
         {
             var diagnostic = CorrelateDiagnostic(captured.Body);
             return new RunResult(false, null, diagnostic);
@@ -196,32 +217,40 @@ public sealed class Runner
     }
 
     /// <summary>
-    /// Refuses to start a run while the project is mid-execution or paused in break mode from a
-    /// prior call - the exact precondition Rubberduck's own test runner checks before running
-    /// anything (VBProject.Mode, a documented Microsoft.Vbe.Interop property; not the reverse-
-    /// engineered internals their execution engine itself needs). Chaining a second Run() onto a
-    /// project VBE never finished recovering from is what turned today's failures into crashes.
+    /// Originally a hard precondition (throw if not in design mode) mirroring Rubberduck's own
+    /// test-runner check. Downgraded to log-only after live testing (2026-08-14) proved
+    /// VBProject.Mode an unreliable signal in this VBE version: it was observed reading Break
+    /// (raw 2) *permanently* - even immediately after Run > Reset and toggling Design Mode in the
+    /// VBE UI - while Application.Run kept succeeding cleanly and repeatedly against the same
+    /// project in the same state. A precondition that can get permanently stuck reporting "broken"
+    /// on a fully healthy project is worse than the crash risk it was meant to prevent: it would
+    /// have silently bricked every subsequent Run() for the rest of the Excel session. The
+    /// underlying crash class this guard targeted (chaining onto a genuinely stuck project) is
+    /// still worth flagging - just not worth refusing to run over, given the signal lies in both
+    /// directions now (see DesignModeValue's comment for the first failure mode, an enum-naming
+    /// bug already fixed).
     /// </summary>
-    private void EnsureProjectIsInDesignMode()
+    private void WarnIfNotInDesignMode()
     {
-        var mode = _project.Mode;
-        if (mode != vbext_VBAMode.vbext_vm_Design)
+        var mode = (int)_project.Mode;
+        if (mode != DesignModeValue)
         {
-            throw new InvalidOperationException(
-                $"The target VBA project '{_project.Name}' is not in design mode (current mode: {mode}). " +
-                "It is likely still mid-execution or paused in break mode from a prior failure - reset it " +
-                "in Excel (Run > Reset, or close and reopen the workbook) before running again.");
+            _log?.Invoke(
+                $"Runner: project '{_project.Name}' is not reporting design mode (raw mode value: {mode}) " +
+                "before this Run() call. Proceeding anyway - this signal has been observed to be stale in " +
+                "this VBE version. If the run actually fails, reset it in Excel (Run > Reset, or close and " +
+                "reopen the workbook).");
         }
     }
 
     private void LogIfNotBackInDesignMode()
     {
-        var mode = _project.Mode;
-        if (mode != vbext_VBAMode.vbext_vm_Design)
+        var mode = (int)_project.Mode;
+        if (mode != DesignModeValue)
         {
             _log?.Invoke(
                 $"Runner: project '{_project.Name}' did not return to design mode after Run() " +
-                $"(current mode: {mode}). The next call may fail or crash Excel until this is reset by hand.");
+                $"(raw mode value: {mode}). The next call may fail or crash Excel until this is reset by hand.");
         }
     }
 }
