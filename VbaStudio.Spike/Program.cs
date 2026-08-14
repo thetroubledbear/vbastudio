@@ -2,6 +2,7 @@
 using System.IO.Abstractions;
 using VbaStudio.Core.Excel;
 using VbaStudio.Core.Sync;
+using VbaStudio.Core.Testing;
 using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
 // tlbimp generates VBE interop types directly in namespace VBIDE, not Microsoft.Vbe.Interop; aliasing fails with CS0234
@@ -25,6 +26,10 @@ internal class Program
             {
                 var entryPoint = args.Length > 1 ? args[1] : "modMain.Main";
                 RunCompileAndRun(entryPoint);
+            }
+            else if (args.Length > 0 && args[0] == "test")
+            {
+                RunTests();
             }
             else
             {
@@ -87,6 +92,43 @@ internal class Program
         Console.WriteLine("Pull #2...");
         sync.Pull();
         Console.WriteLine("Done. Diff the 'src' directory between runs with git or a hash tool to confirm byte-identical output.");
+    }
+
+    private static void RunTests()
+    {
+        var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
+        var project = excel.ActiveWorkbook.VBProject;
+        var runner = new Runner(excel, project, Console.WriteLine);
+        var testRunner = new TestRunner(runner);
+
+        var tests = TestDiscovery.DiscoverTests(new FileSystem(), "src");
+        if (tests.Count == 0)
+        {
+            Console.WriteLine("0 tests found.");
+            return;
+        }
+
+        Console.WriteLine($"Discovered {tests.Count} test(s).");
+
+        var results = testRunner.RunAll(tests);
+
+        var passed = 0;
+        var failed = 0;
+        foreach (var result in results)
+        {
+            if (result.Passed)
+            {
+                passed++;
+                Console.WriteLine($"PASS {result.Test.QualifiedName} ({result.Duration.TotalMilliseconds:F0}ms)");
+            }
+            else
+            {
+                failed++;
+                Console.WriteLine($"FAIL {result.Test.QualifiedName}: {result.FailureMessage} ({result.Duration.TotalMilliseconds:F0}ms)");
+            }
+        }
+
+        Console.WriteLine($"{passed} passed, {failed} failed, {results.Count} total");
     }
 
     private static void RunSpike()
