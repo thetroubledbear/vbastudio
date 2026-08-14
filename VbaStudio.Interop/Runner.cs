@@ -48,19 +48,28 @@ public sealed class Runner
         // mechanism proven reliable is Application.Run's own implicit "compile the whole project
         // before executing anything" step. To get a side-effect-free compile check out of that,
         // inject a throwaway no-op procedure, Run it, then always remove it again.
-        var components = _project.VBComponents;
-        VBComponent checkComponent;
-        try
+        //
+        // Every phase below runs under its own watcher, not just the Run() phase - confirmed the
+        // hard way. VBComponents.Add() against a project with a just-edited, not-yet-validated
+        // module (the exact CompileOnly use case) can itself pop a modal: "This action will reset
+        // your project, proceed anyway?" - same caption/class as a compile error, but not one.
+        // With no watcher running yet at that point, it blocked indefinitely. A dialog from setup
+        // or cleanup gets dismissed but is not diagnostic-worthy; only a dialog during the actual
+        // compile-check Run() means the target code failed to compile - so each phase gets its
+        // own fresh watcher, and only the middle one's capture becomes the returned diagnostic.
+        VBComponent? checkComponent = null;
+        ExecuteWithWatcher(() =>
         {
-            checkComponent = components.Add(vbext_ComponentType.vbext_ct_StdModule);
-        }
-        finally
-        {
-            ComRelease.Release(components);
-        }
+            var components = _project.VBComponents;
+            try
+            {
+                checkComponent = components.Add(vbext_ComponentType.vbext_ct_StdModule);
+            }
+            finally
+            {
+                ComRelease.Release(components);
+            }
 
-        try
-        {
             var codeModule = checkComponent.CodeModule;
             try
             {
@@ -70,30 +79,32 @@ public sealed class Runner
             {
                 ComRelease.Release(codeModule);
             }
+        });
 
-            var qualifiedName = $"{checkComponent.Name}.{CompileCheckProcedureName}";
-            var captured = ExecuteWithWatcher(() =>
-            {
-                _excel.Run(qualifiedName);
-            });
+        if (checkComponent == null)
+        {
+            throw new InvalidOperationException("Failed to create the compile-check module.");
+        }
 
-            var diagnostic = captured == null ? null : CorrelateDiagnostic(captured);
-            return new CompileResult(diagnostic == null, diagnostic);
+        var qualifiedName = $"{checkComponent.Name}.{CompileCheckProcedureName}";
+        var captured = ExecuteWithWatcher(() =>
+        {
+            _excel.Run(qualifiedName);
+        });
+
+        var componentsForRemove = _project.VBComponents;
+        try
+        {
+            ExecuteWithWatcher(() => componentsForRemove.Remove(checkComponent));
         }
         finally
         {
-            var componentsForRemove = _project.VBComponents;
-            try
-            {
-                componentsForRemove.Remove(checkComponent);
-            }
-            finally
-            {
-                ComRelease.Release(componentsForRemove);
-            }
-
+            ComRelease.Release(componentsForRemove);
             ComRelease.Release(checkComponent);
         }
+
+        var diagnostic = captured == null ? null : CorrelateDiagnostic(captured);
+        return new CompileResult(diagnostic == null, diagnostic);
     }
 
     public RunResult Run(string entryPoint)
