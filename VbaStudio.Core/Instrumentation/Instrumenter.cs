@@ -102,7 +102,7 @@ public static class Instrumenter
             // odd. The Select Case line itself still gets probed normally (nothing wrong with
             // probing before it runs); only the next probeable line - which VBA syntax
             // guarantees is the first Case clause - is suppressed.
-            if (suppressNextProbe && !skip && !isBlank)
+            if (suppressNextProbe && !isBlank)
             {
                 skip = true;
                 suppressNextProbe = false;

@@ -293,4 +293,27 @@ public class InstrumenterTests
         // No probe line was inserted between "Select Case x" and "Case 1" - they remain adjacent.
         Assert.Contains("    Select Case x\r\n        Case 1\r\n", result.InstrumentedSource);
     }
+
+    [Fact]
+    public void Instrument_SelectCaseLineCommentEndingInUnderscore_DoesNotLeakSuppressionToLaterLine()
+    {
+        var source = "Public Sub DoWork(x As Long)\r\n" +
+                      "    Select Case x ' fall-through note _\r\n" +
+                      "        Case 1\r\n" +
+                      "            x = 2\r\n" +
+                      "    End Select\r\n" +
+                      "End Sub\r\n";
+        var module = VbaParser.ParseModule(source, "modWork");
+        var procedure = module.Procedures.Single();
+
+        var result = Instrumenter.Instrument(source, procedure, "modWork");
+
+        // Probed: "Select Case x ..." (line 2), "x = 2" (line 4), "End Select" (line 5).
+        // NOT probed: "Case 1" (line 3, suppressed by the Select Case guard).
+        // Before this fix, the continuation-marker guard firing on "Case 1" prevented
+        // suppressNextProbe from ever resetting, so it leaked forward and incorrectly
+        // suppressed "x = 2" too - this pins that it no longer does.
+        Assert.Equal(3, result.ProbeSites.Count);
+        Assert.Equal(new[] { 2, 4, 5 }, result.ProbeSites.Select(p => p.OriginalLine));
+    }
 }
