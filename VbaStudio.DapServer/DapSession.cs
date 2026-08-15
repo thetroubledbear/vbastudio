@@ -7,7 +7,9 @@ using System.Text.Json;
 using System.Threading;
 using VbaStudio.Core.Dap;
 using VbaStudio.Core.Debug;
+using VbaStudio.Core.Instrumentation;
 using VbaStudio.Core.Model;
+using VbaStudio.Core.Parsing;
 using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -30,6 +32,7 @@ public sealed class DapSession
     private string? _launchEntryPoint;
     private bool _running;
     private IReadOnlyDictionary<string, string> _moduleFilePaths = new Dictionary<string, string>();
+    private IReadOnlyList<ProbeSite> _launchProbeSites = Array.Empty<ProbeSite>();
 
     private readonly object _breakpointsLock = new();
     private readonly HashSet<(string Module, int Line)> _breakpoints = new();
@@ -173,9 +176,12 @@ public sealed class DapSession
 
         var workbookDir = Path.GetDirectoryName(_workbook.FullName) ?? ".";
         var access = new ExcelVbaProjectAccess(_workbook.VBProject);
-        _moduleFilePaths = access.ReadAll().ToDictionary(
+        var modules = access.ReadAll();
+        _moduleFilePaths = modules.ToDictionary(
             m => m.Name,
             m => Path.Combine(workbookDir, "src", m.Kind.SourceFolder(), m.Name + m.Kind.FileExtension()));
+
+        _launchProbeSites = ComputeLaunchProbeSites(modules, _launchModule, args.EntryPoint);
 
         SendResponse(request, null);
     }
@@ -185,18 +191,57 @@ public sealed class DapSession
         var args = request.Arguments!.Value.Deserialize<SetBreakpointsArguments>()!;
         var moduleName = Path.GetFileNameWithoutExtension(args.Source.Path ?? "").ToUpperInvariant();
 
-        var verifiedBreakpoints = new List<DapBreakpoint>();
+        var verifiedBreakpoints = BreakpointVerifier.ComputeVerifiedBreakpoints(
+            _launchProbeSites, moduleName, args.Breakpoints.Select(bp => bp.Line).ToList());
+
         lock (_breakpointsLock)
         {
             _breakpoints.RemoveWhere(bp => bp.Module == moduleName);
-            foreach (var bp in args.Breakpoints)
+            foreach (var bp in verifiedBreakpoints.Where(bp => bp.Verified))
             {
-                _breakpoints.Add((moduleName, bp.Line));
-                verifiedBreakpoints.Add(new DapBreakpoint(Verified: true, Line: bp.Line));
+                _breakpoints.Add((moduleName, bp.Line!.Value));
             }
         }
 
         SendResponse(request, new SetBreakpointsResponseBody(verifiedBreakpoints));
+    }
+
+    // Instrumentation is a pure text transform (no COM, no shadow workbook) - running it here,
+    // against the live project's current source, lets setBreakpoints report genuine
+    // verified/unverified status instead of the unconditional verified:true M6a shipped with.
+    // DebugSession.Run (triggered later, by configurationDone) re-instruments independently
+    // against the shadow copy for the actual run; the two calls are deliberately not shared
+    // state - both are cheap and deterministic over the same source, so there's no staleness
+    // risk worth the coupling. Failure here (bad module/procedure name) is swallowed: the
+    // launch handshake must not break over a verification preview, and the real error surfaces
+    // identically at configurationDone exactly as it did before this change.
+    private static IReadOnlyList<ProbeSite> ComputeLaunchProbeSites(
+        IReadOnlyList<VbaModule> modules, string launchModule, string entryPointQualifiedName)
+    {
+        try
+        {
+            var targetModule = modules.FirstOrDefault(
+                m => string.Equals(m.Name, launchModule, StringComparison.OrdinalIgnoreCase));
+            if (targetModule == null)
+            {
+                return Array.Empty<ProbeSite>();
+            }
+
+            var moduleSymbols = VbaParser.ParseModule(targetModule.Code, targetModule.Name);
+            var procedureName = entryPointQualifiedName.Substring(entryPointQualifiedName.LastIndexOf('.') + 1);
+            var procedure = moduleSymbols.Procedures.FirstOrDefault(
+                p => string.Equals(p.Name, procedureName, StringComparison.OrdinalIgnoreCase));
+            if (procedure == null)
+            {
+                return Array.Empty<ProbeSite>();
+            }
+
+            return Instrumenter.Instrument(targetModule.Code, procedure, targetModule.Name).ProbeSites;
+        }
+        catch
+        {
+            return Array.Empty<ProbeSite>();
+        }
     }
 
     private void HandleThreads(DapRequest request)
