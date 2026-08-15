@@ -7,5 +7,6 @@ public interface IVbaProjectAccess
 {
     IReadOnlyList<VbaModule> ReadAll();
     void Write(VbaModule module);
+    void Delete(string name);
     bool IsMacroRunning { get; }
 }

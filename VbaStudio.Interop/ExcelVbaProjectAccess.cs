@@ -163,6 +163,28 @@ public sealed class ExcelVbaProjectAccess : IVbaProjectAccess
         }
     }
 
+    public void Delete(string name)
+    {
+        var existing = FindComponent(name)
+            ?? throw new InvalidOperationException($"Cannot delete module '{name}': it does not exist in the live project.");
+        try
+        {
+            var components = _project.VBComponents;
+            try
+            {
+                components.Remove(existing);
+            }
+            finally
+            {
+                ComRelease.Release(components);
+            }
+        }
+        finally
+        {
+            ComRelease.Release(existing);
+        }
+    }
+
     private void WriteByRemoveImport(VbaModule module)
     {
         var existing = FindComponent(module.Name);

@@ -140,8 +140,15 @@ internal class Program
             var srcDir = Path.Combine(workbookDir, "src");
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var syncEngine = new SyncEngine(access, new FileSystem(), srcDir);
-            syncEngine.Pull();
-            Console.WriteLine(JsonSerializer.Serialize(new { success = true, srcDir }));
+            var result = syncEngine.Pull();
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                success = true,
+                srcDir,
+                written = result.Written,
+                deleted = result.Deleted,
+                conflicts = result.Conflicts
+            }));
         });
     }
 
@@ -156,8 +163,14 @@ internal class Program
             var srcDir = Path.Combine(workbookDir, "src");
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var syncEngine = new SyncEngine(access, new FileSystem(), srcDir);
-            syncEngine.Push();
-            Console.WriteLine("{\"success\":true}");
+            var result = syncEngine.Push();
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                success = true,
+                written = result.Written,
+                deleted = result.Deleted,
+                conflicts = result.Conflicts
+            }));
         });
     }
 

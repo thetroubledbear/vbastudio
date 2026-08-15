@@ -115,4 +115,187 @@ public class SyncEngineTests
         Assert.Null(exception);
         Assert.Equal(0, fake.WriteCallCount);
     }
+
+    private static readonly Encoding Cp1252 = Encoding.GetEncoding(1252);
+
+    [Fact]
+    public void Pull_ExcelChangedSinceLastSync_DiskUnchanged_OverwritesDisk()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V2", ".bas"));
+        var result = sync.Pull();
+
+        var content = fs.File.ReadAllText(fs.Path.Combine("src", "Modules", "modCalc.bas"), Cp1252);
+        Assert.Equal("V2", content);
+        Assert.Contains("modCalc", result.Written);
+    }
+
+    [Fact]
+    public void Pull_DiskChangedLocally_ExcelUnchanged_DoesNotOverwriteDisk()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.WriteAllText(path, "local-edit", Cp1252);
+
+        var result = sync.Pull();
+
+        Assert.Equal("local-edit", fs.File.ReadAllText(path, Cp1252));
+        Assert.DoesNotContain("modCalc", result.Written);
+        Assert.DoesNotContain("modCalc", result.Conflicts);
+    }
+
+    [Fact]
+    public void Pull_BothChangedDifferently_ReportsConflict_DoesNotOverwriteDisk()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.WriteAllText(path, "local-edit", Cp1252);
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "excel-edit", ".bas"));
+
+        var result = sync.Pull();
+
+        Assert.Equal("local-edit", fs.File.ReadAllText(path, Cp1252));
+        Assert.Contains("modCalc", result.Conflicts);
+    }
+
+    [Fact]
+    public void Pull_ModuleDeletedInExcel_DiskUnchanged_DeletesFileAndReportsDeleted()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fake.Delete("modCalc");
+
+        var result = sync.Pull();
+
+        Assert.False(fs.File.Exists(path));
+        Assert.Contains("modCalc", result.Deleted);
+    }
+
+    [Fact]
+    public void Pull_ModuleDeletedInExcel_DiskChangedLocally_ReportsConflict_KeepsFile()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.WriteAllText(path, "local-edit", Cp1252);
+        fake.Delete("modCalc");
+
+        var result = sync.Pull();
+
+        Assert.True(fs.File.Exists(path));
+        Assert.Equal("local-edit", fs.File.ReadAllText(path, Cp1252));
+        Assert.Contains("modCalc", result.Conflicts);
+    }
+
+    [Fact]
+    public void Push_ExcelChangedSinceLastSync_DiskUnchanged_DoesNotCallWrite()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "excel-edit", ".bas"));
+
+        var result = sync.Push();
+
+        Assert.Equal(0, fake.WriteCallCount);
+        Assert.Equal("excel-edit", fake.ReadAll().Single().Code);
+        Assert.DoesNotContain("modCalc", result.Written);
+    }
+
+    [Fact]
+    public void Push_BothChangedDifferently_ReportsConflict_DoesNotCallWrite()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.WriteAllText(path, "local-edit", Cp1252);
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "excel-edit", ".bas"));
+
+        var result = sync.Push();
+
+        Assert.Equal(0, fake.WriteCallCount);
+        Assert.Equal("excel-edit", fake.ReadAll().Single().Code);
+        Assert.Contains("modCalc", result.Conflicts);
+    }
+
+    [Fact]
+    public void Push_FileDeletedOnDisk_ExcelUnchanged_DeletesModuleAndReportsDeleted()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.Delete(path);
+
+        var result = sync.Push();
+
+        Assert.Equal(1, fake.DeleteCallCount);
+        Assert.Empty(fake.ReadAll());
+        Assert.Contains("modCalc", result.Deleted);
+    }
+
+    [Fact]
+    public void Push_FileDeletedOnDisk_ExcelChangedSinceLastSync_ReportsConflict_DoesNotDelete()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "V1", ".bas"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Modules", "modCalc.bas");
+        fs.File.Delete(path);
+        fake.Add(new VbaModule("modCalc", ModuleKind.Standard, "excel-edit", ".bas"));
+
+        var result = sync.Push();
+
+        Assert.Equal(0, fake.DeleteCallCount);
+        Assert.Equal("excel-edit", fake.ReadAll().Single().Code);
+        Assert.Contains("modCalc", result.Conflicts);
+    }
+
+    [Fact]
+    public void Push_FileDeletedOnDisk_DocumentModule_DoesNotDelete()
+    {
+        var fake = new FakeVbaProjectAccess();
+        fake.Add(new VbaModule("Sheet1", ModuleKind.Document, "Option Explicit", ".cls"));
+        var fs = new MockFileSystem();
+        var sync = new SyncEngine(fake, fs, "src");
+        sync.Pull();
+        var path = fs.Path.Combine("src", "Sheets", "Sheet1.cls");
+        fs.File.Delete(path);
+
+        var result = sync.Push();
+
+        Assert.Equal(0, fake.DeleteCallCount);
+        Assert.Single(fake.ReadAll());
+        Assert.DoesNotContain("Sheet1", result.Deleted);
+        Assert.DoesNotContain("Sheet1", result.Conflicts);
+    }
 }

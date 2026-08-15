@@ -11,6 +11,7 @@ public sealed class FakeVbaProjectAccess : IVbaProjectAccess
 
     public bool IsMacroRunning { get; set; }
     public int WriteCallCount { get; private set; }
+    public int DeleteCallCount { get; private set; }
 
     public void Add(VbaModule module) => _modules[module.Name] = module;
 
@@ -20,5 +21,11 @@ public sealed class FakeVbaProjectAccess : IVbaProjectAccess
     {
         WriteCallCount++;
         _modules[module.Name] = module;
+    }
+
+    public void Delete(string name)
+    {
+        DeleteCallCount++;
+        _modules.Remove(name);
     }
 }

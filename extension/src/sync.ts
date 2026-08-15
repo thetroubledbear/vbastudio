@@ -13,10 +13,7 @@ export async function pullModules(): Promise<boolean> {
     // WORKBOOK's location, which is not necessarily the folder open in VS Code, so it is shown
     // back to the user rather than left implicit.
     const stdout = await runServerMode(serverPath, ["pull"], "pull modules");
-    const srcDir: string | undefined = parseSrcDir(stdout);
-    vscode.window.showInformationMessage(
-      srcDir ? `Modules pulled from Excel to ${srcDir}.` : "Modules pulled from Excel."
-    );
+    reportSyncResult("pull", parseSyncResult(stdout));
     return true;
   } catch (err: any) {
     vscode.window.showErrorMessage(err?.message ?? String(err));
@@ -24,12 +21,51 @@ export async function pullModules(): Promise<boolean> {
   }
 }
 
-function parseSrcDir(stdout: string): string | undefined {
+interface SyncResultPayload {
+  srcDir?: string;
+  written: string[];
+  deleted: string[];
+  conflicts: string[];
+}
+
+function parseSyncResult(stdout: string): SyncResultPayload {
   try {
-    const srcDir = JSON.parse(stdout)?.srcDir;
-    return typeof srcDir === "string" && srcDir ? srcDir : undefined;
+    const parsed = JSON.parse(stdout);
+    return {
+      srcDir: typeof parsed?.srcDir === "string" ? parsed.srcDir : undefined,
+      written: Array.isArray(parsed?.written) ? parsed.written : [],
+      deleted: Array.isArray(parsed?.deleted) ? parsed.deleted : [],
+      conflicts: Array.isArray(parsed?.conflicts) ? parsed.conflicts : [],
+    };
   } catch {
-    return undefined;
+    return { written: [], deleted: [], conflicts: [] };
+  }
+}
+
+// Conflicts get their own warning dialog (not folded into the info message) because they are
+// the one outcome that needs the user to actually do something - both sides changed since the
+// last sync, so SyncEngine left that module untouched on both ends rather than guess which side
+// wins. Everything else (counts of what moved) is a low-attention info toast.
+function reportSyncResult(direction: "pull" | "push", result: SyncResultPayload): void {
+  const counts: string[] = [];
+  if (result.written.length > 0) {
+    counts.push(`${result.written.length} written`);
+  }
+  if (result.deleted.length > 0) {
+    counts.push(`${result.deleted.length} deleted`);
+  }
+  const countsSuffix = counts.length > 0 ? ` (${counts.join(", ")})` : "";
+
+  const verb = direction === "pull" ? "pulled from Excel" : "pushed to Excel";
+  const location = direction === "pull" && result.srcDir ? ` to ${result.srcDir}` : "";
+  vscode.window.showInformationMessage(`Modules ${verb}${location}.${countsSuffix}`);
+
+  if (result.conflicts.length > 0) {
+    const noun = result.conflicts.length === 1 ? "module" : "modules";
+    vscode.window.showWarningMessage(
+      `Sync conflict on ${noun}: ${result.conflicts.join(", ")}. ` +
+        "Both disk and Excel changed since the last sync - left untouched. Resolve manually, then sync again."
+    );
   }
 }
 
@@ -40,8 +76,8 @@ export async function pushModules(): Promise<boolean> {
   }
 
   try {
-    await runServerMode(serverPath, ["push"], "push modules");
-    vscode.window.showInformationMessage("Modules pushed to Excel.");
+    const stdout = await runServerMode(serverPath, ["push"], "push modules");
+    reportSyncResult("push", parseSyncResult(stdout));
     return true;
   } catch (err: any) {
     vscode.window.showErrorMessage(err?.message ?? String(err));

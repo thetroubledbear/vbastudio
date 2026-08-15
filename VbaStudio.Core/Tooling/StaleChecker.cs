@@ -19,6 +19,6 @@ public static class StaleChecker
         return diskContent == null || Normalize(diskContent) != Normalize(excelContent);
     }
 
-    private static string Normalize(string content)
+    public static string Normalize(string content)
         => content.Replace("\r\n", "\n").Replace("\r", "\n").TrimEnd();
 }
