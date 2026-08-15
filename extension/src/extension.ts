@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
 import { configureLaunch, writeLaunchConfig } from "./configureLaunch";
 import { ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
+import { confirmStaleOrProceed, pullModules, pushModules } from "./sync";
 
 export function activate(context: vscode.ExtensionContext) {
   const treeProvider = new ModuleTreeProvider();
@@ -39,12 +40,24 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("vbastudio.configureLaunch", () => configureLaunch()),
     vscode.window.registerTreeDataProvider("vbastudioModules", treeProvider),
     vscode.commands.registerCommand("vbastudio.refreshModules", () => treeProvider.refresh()),
+    vscode.commands.registerCommand("vbastudio.pullModules", async () => {
+      const succeeded = await pullModules();
+      if (succeeded) {
+        treeProvider.refresh();
+      }
+    }),
+    vscode.commands.registerCommand("vbastudio.pushModules", () => pushModules()),
     vscode.commands.registerCommand(
       "vbastudio.runProcedureFromTree",
       async (node: ProcedureNode) => {
         const folder = vscode.workspace.workspaceFolders?.[0];
         if (!folder) {
           vscode.window.showErrorMessage("Open a folder to configure launch.json.");
+          return;
+        }
+
+        const shouldProceed = await confirmStaleOrProceed(node.moduleName);
+        if (!shouldProceed) {
           return;
         }
 

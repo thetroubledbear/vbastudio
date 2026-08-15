@@ -2,7 +2,7 @@
   "name": "vbastudio-debug",
   "displayName": "VbaStudio Debugger",
   "description": "Debug Adapter Protocol client for vbastudio - F5 debugging of Excel VBA via VbaStudio.DapServer.exe",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "vbastudio",
   "private": true,
   "engines": {
@@ -46,6 +46,16 @@
           "command": "vbastudio.refreshModules",
           "when": "view == vbastudioModules",
           "group": "navigation"
+        },
+        {
+          "command": "vbastudio.pullModules",
+          "when": "view == vbastudioModules",
+          "group": "navigation"
+        },
+        {
+          "command": "vbastudio.pushModules",
+          "when": "view == vbastudioModules",
+          "group": "navigation"
         }
       ]
     },
@@ -62,6 +72,16 @@
         "command": "vbastudio.refreshModules",
         "title": "VbaStudio: Refresh Modules",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "vbastudio.pullModules",
+        "title": "VbaStudio: Pull Modules from Excel",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "vbastudio.pushModules",
+        "title": "VbaStudio: Push Modules to Excel",
+        "icon": "$(cloud-upload)"
       }
     ],
     "configuration": {
