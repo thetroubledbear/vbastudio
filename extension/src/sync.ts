@@ -1,67 +1,58 @@
 // extension/src/sync.ts
-import { execFile } from "child_process";
-import { promisify } from "util";
 import * as vscode from "vscode";
-import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
-
-const execFileAsync = promisify(execFile);
-
-async function ensureServerPath(): Promise<string | undefined> {
-  const serverPath = getDapServerPath();
-  if (isValidServerPath(serverPath)) {
-    return serverPath;
-  }
-
-  const action = await vscode.window.showErrorMessage(
-    "vbastudio.dapServerPath is not set to a valid VbaStudio.DapServer.exe. Set it before syncing.",
-    "Browse..."
-  );
-  if (action === "Browse...") {
-    await promptToBrowseForServer();
-  }
-  return undefined;
-}
+import { ensureServerPath, getDapServerPath, isValidServerPath, runServerMode } from "./config";
 
 export async function pullModules(): Promise<boolean> {
-  const serverPath = await ensureServerPath();
+  const serverPath = await ensureServerPath("syncing");
   if (!serverPath) {
     return false;
   }
 
   try {
-    await execFileAsync(serverPath, ["pull"]);
-    vscode.window.showInformationMessage("Modules pulled from Excel.");
+    // `pull` reports the directory it actually wrote to. That directory is derived from the
+    // WORKBOOK's location, which is not necessarily the folder open in VS Code, so it is shown
+    // back to the user rather than left implicit.
+    const stdout = await runServerMode(serverPath, ["pull"], "pull modules");
+    const srcDir: string | undefined = parseSrcDir(stdout);
+    vscode.window.showInformationMessage(
+      srcDir ? `Modules pulled from Excel to ${srcDir}.` : "Modules pulled from Excel."
+    );
     return true;
   } catch (err: any) {
-    const stderrText: string | undefined = err?.stderr?.toString().trim();
-    vscode.window.showErrorMessage(
-      stderrText || `Failed to pull modules: ${err?.message ?? String(err)}`
-    );
+    vscode.window.showErrorMessage(err?.message ?? String(err));
     return false;
+  }
+}
+
+function parseSrcDir(stdout: string): string | undefined {
+  try {
+    const srcDir = JSON.parse(stdout)?.srcDir;
+    return typeof srcDir === "string" && srcDir ? srcDir : undefined;
+  } catch {
+    return undefined;
   }
 }
 
 export async function pushModules(): Promise<boolean> {
-  const serverPath = await ensureServerPath();
+  const serverPath = await ensureServerPath("syncing");
   if (!serverPath) {
     return false;
   }
 
   try {
-    await execFileAsync(serverPath, ["push"]);
+    await runServerMode(serverPath, ["push"], "push modules");
     vscode.window.showInformationMessage("Modules pushed to Excel.");
     return true;
   } catch (err: any) {
-    const stderrText: string | undefined = err?.stderr?.toString().trim();
-    vscode.window.showErrorMessage(
-      stderrText || `Failed to push modules: ${err?.message ?? String(err)}`
-    );
+    vscode.window.showErrorMessage(err?.message ?? String(err));
     return false;
   }
 }
 
 // Fails open: if the check itself can't complete (invalid server path, execFile failure),
-// returns false rather than blocking a run over a diagnostic that couldn't run.
+// returns false rather than blocking a run over a diagnostic that couldn't run. Deliberately
+// uses the raw path check rather than ensureServerPath - this runs as a silent pre-flight, and
+// must never pop an error dialog of its own.
 export async function isStale(moduleName: string): Promise<boolean> {
   const serverPath = getDapServerPath();
   if (!isValidServerPath(serverPath)) {
@@ -69,7 +60,7 @@ export async function isStale(moduleName: string): Promise<boolean> {
   }
 
   try {
-    const { stdout } = await execFileAsync(serverPath, ["stale", moduleName]);
+    const stdout = await runServerMode(serverPath, ["stale", moduleName], "check module staleness");
     const result = JSON.parse(stdout);
     return !!result.stale;
   } catch {

@@ -9,7 +9,7 @@
     "vscode": "^1.85.0"
   },
   "categories": ["Debuggers"],
-  "activationEvents": [],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "scripts": {
     "compile": "tsc -p ./",
@@ -66,7 +66,7 @@
       },
       {
         "command": "vbastudio.goToProcedure",
-        "title": "VbaStudio: Go to Procedure..."
+        "title": "VbaStudio: Run Procedure..."
       },
       {
         "command": "vbastudio.setDapServerPath",

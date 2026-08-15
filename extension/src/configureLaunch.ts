@@ -1,11 +1,7 @@
 // extension/src/configureLaunch.ts
-import { execFile } from "child_process";
-import { promisify } from "util";
 import * as vscode from "vscode";
-import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
+import { ensureServerPath, runServerMode } from "./config";
 import { confirmStaleOrProceed } from "./sync";
-
-const execFileAsync = promisify(execFile);
 
 export interface ModuleListing {
   name: string;
@@ -21,12 +17,11 @@ export interface ModuleListResult {
 // ready-to-display message on failure - callers decide how to surface it (a dialog for a
 // deliberately-triggered command, a tree node for a background/render-time fetch).
 export async function runList(serverPath: string): Promise<ModuleListResult> {
+  const stdout = await runServerMode(serverPath, ["list"], "list modules");
   try {
-    const { stdout } = await execFileAsync(serverPath, ["list"]);
     return JSON.parse(stdout);
   } catch (err: any) {
-    const stderrText: string | undefined = err?.stderr?.toString().trim();
-    throw new Error(stderrText || `Failed to list modules: ${err?.message ?? String(err)}`);
+    throw new Error(`Failed to list modules: ${err?.message ?? String(err)}`);
   }
 }
 
@@ -72,15 +67,8 @@ export async function configureLaunch(): Promise<void> {
     return;
   }
 
-  const serverPath = getDapServerPath();
-  if (!isValidServerPath(serverPath)) {
-    const action = await vscode.window.showErrorMessage(
-      "vbastudio.dapServerPath is not set to a valid VbaStudio.DapServer.exe. Set it before configuring a launch target.",
-      "Browse..."
-    );
-    if (action === "Browse...") {
-      await promptToBrowseForServer();
-    }
+  const serverPath = await ensureServerPath("configuring a launch target");
+  if (!serverPath) {
     return;
   }
 
@@ -150,15 +138,8 @@ export async function goToProcedure(): Promise<void> {
     return;
   }
 
-  const serverPath = getDapServerPath();
-  if (!isValidServerPath(serverPath)) {
-    const action = await vscode.window.showErrorMessage(
-      "vbastudio.dapServerPath is not set to a valid VbaStudio.DapServer.exe. Set it before running a procedure.",
-      "Browse..."
-    );
-    if (action === "Browse...") {
-      await promptToBrowseForServer();
-    }
+  const serverPath = await ensureServerPath("running a procedure");
+  if (!serverPath) {
     return;
   }
 
@@ -197,11 +178,15 @@ export async function goToProcedure(): Promise<void> {
     return;
   }
 
-  const config = await writeLaunchConfig(
-    folder,
-    result.workbookPath,
-    pick.moduleName,
-    pick.procedureName
-  );
-  await vscode.debug.startDebugging(folder, config);
+  try {
+    const config = await writeLaunchConfig(
+      folder,
+      result.workbookPath,
+      pick.moduleName,
+      pick.procedureName
+    );
+    await vscode.debug.startDebugging(folder, config);
+  } catch (err: any) {
+    vscode.window.showErrorMessage(err?.message ?? String(err));
+  }
 }

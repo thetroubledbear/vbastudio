@@ -1,6 +1,6 @@
 // extension/src/extension.ts
 import * as vscode from "vscode";
-import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
+import { ensureServerPath, getDapServerPath, promptToBrowseForServer } from "./config";
 import { configureLaunch, goToProcedure, writeLaunchConfig } from "./configureLaunch";
 import { ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
 import { confirmStaleOrProceed, pullModules, pushModules } from "./sync";
@@ -12,8 +12,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.StatusBarAlignment.Right,
     100
   );
-  goToProcedureStatusBarItem.text = "$(list-selection) VbaStudio";
-  goToProcedureStatusBarItem.tooltip = "VbaStudio: Go to Procedure...";
+  // Icon and label both say "run", because that is what clicking this does - it writes a
+  // launch.json entry for the picked procedure and starts debugging immediately. An earlier
+  // $(list-selection) / "Go to Procedure..." pairing read like VS Code's own Go to Symbol, i.e.
+  // navigation, which made it easy to run arbitrary VBA against a live workbook by accident.
+  goToProcedureStatusBarItem.text = "$(debug-start) VbaStudio";
+  goToProcedureStatusBarItem.tooltip = "VbaStudio: Run Procedure...";
   goToProcedureStatusBarItem.command = "vbastudio.goToProcedure";
   goToProcedureStatusBarItem.show();
 
@@ -30,15 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
         _folder: vscode.WorkspaceFolder | undefined,
         config: vscode.DebugConfiguration
       ): Promise<vscode.DebugConfiguration | undefined> {
-        const serverPath = getDapServerPath();
-        if (!isValidServerPath(serverPath)) {
-          const action = await vscode.window.showErrorMessage(
-            "vbastudio.dapServerPath is not set to a valid VbaStudio.DapServer.exe. Set it in Settings before debugging.",
-            "Browse..."
-          );
-          if (action === "Browse...") {
-            await promptToBrowseForServer();
-          }
+        if (!(await ensureServerPath("debugging"))) {
           return undefined;
         }
         return config;
@@ -72,13 +68,17 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
 
-        const config = await writeLaunchConfig(
-          folder,
-          node.workbookPath,
-          node.moduleName,
-          node.name
-        );
-        await vscode.debug.startDebugging(folder, config);
+        try {
+          const config = await writeLaunchConfig(
+            folder,
+            node.workbookPath,
+            node.moduleName,
+            node.name
+          );
+          await vscode.debug.startDebugging(folder, config);
+        } catch (err: any) {
+          vscode.window.showErrorMessage(err?.message ?? String(err));
+        }
       }
     )
   );
