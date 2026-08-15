@@ -42,13 +42,65 @@ internal class Program
             return;
         }
 
+        // Anything that looks like a mode but matched none of the branches above (a typo, or a
+        // known mode missing its required argument - "stale" with no module name) must NOT fall
+        // through into the DAP loop below: that loop blocks on stdin forever, so a malformed
+        // invocation would hang instead of failing. Exit 2 distinguishes "bad invocation" from
+        // the one-shot modes' exit 1 ("ran, but Excel/COM failed").
+        if (args.Length > 0)
+        {
+            Console.Error.WriteLine(
+                $"Unknown mode '{args[0]}'. Expected one of: list, pull, push, stale <moduleName>, " +
+                "or no arguments at all to run as a DAP server on stdin/stdout.");
+            Environment.Exit(2);
+            return;
+        }
+
+        RunDapServer();
+    }
+
+    // The shared prologue/epilogue every mode below needs: register the COM message filter, attach
+    // to the already-running Excel instance, refuse cleanly if there's no active workbook, hand the
+    // body the workbook's own directory (the root of this project's <workbookDir>/src convention),
+    // and make sure any failure leaves via one stderr line and a non-zero exit rather than an
+    // unhandled exception's stack trace - the caller here is VS Code's extension host via
+    // child_process, not a human reading a console. The filter is revoked either way.
+    private static void WithActiveWorkbook(Action<Excel.Application, Excel.Workbook, string> body)
+    {
         ExcelMessageFilter.Register();
         try
         {
             var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
             var workbook = excel.ActiveWorkbook;
+            if (workbook == null)
+            {
+                Console.Error.WriteLine("No active workbook in the running Excel instance.");
+                Environment.Exit(1);
+                return;
+            }
 
             var workbookDir = Path.GetDirectoryName(workbook.FullName) ?? ".";
+            body(excel, workbook, workbookDir);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            Environment.Exit(1);
+        }
+        finally
+        {
+            ExcelMessageFilter.Revoke();
+        }
+    }
+
+    // The default, no-arguments mode: a long-lived DAP server speaking on stdin/stdout, unlike the
+    // four one-shot modes below. Only the attach-and-validate prologue is shared with them - once
+    // DapSession.RunMessageLoop starts, its own error handling takes over and nothing here
+    // interferes with it.
+    private static void RunDapServer()
+    {
+        WithActiveWorkbook((excel, workbook, workbookDir) =>
+        {
             var shadowPath = Path.Combine(workbookDir, "build", "shadow.xlsm");
             Directory.CreateDirectory(Path.GetDirectoryName(shadowPath)!);
 
@@ -57,117 +109,56 @@ internal class Program
 
             var session = new DapSession(excel, workbook, shadowPath, output);
             session.RunMessageLoop(input);
-        }
-        finally
-        {
-            ExcelMessageFilter.Revoke();
-        }
+        });
     }
 
     // Separate, short-lived, one-shot code path from the DAP message loop above - not a DAP
     // request, never touches DapSession. Prints one JSON line to stdout and exits. Any failure
     // (Excel not running, no active workbook, COM error) writes one line to stderr and exits
-    // non-zero rather than letting an exception's stack trace reach the caller - the caller here
-    // is VS Code's extension host via child_process, not a human reading a console.
+    // non-zero - see WithActiveWorkbook.
     private static void RunList()
     {
-        ExcelMessageFilter.Register();
-        try
+        WithActiveWorkbook((excel, workbook, workbookDir) =>
         {
-            var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
-            var workbook = excel.ActiveWorkbook;
-            if (workbook == null)
-            {
-                Console.Error.WriteLine("No active workbook in the running Excel instance.");
-                Environment.Exit(1);
-                return;
-            }
-
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var modules = access.ReadAll();
             var result = ModuleListBuilder.Build(workbook.FullName, modules);
             Console.WriteLine(JsonSerializer.Serialize(result));
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            Environment.Exit(1);
-        }
-        finally
-        {
-            ExcelMessageFilter.Revoke();
-        }
+        });
     }
 
     // Same one-shot shape as RunList - attaches, runs SyncEngine.Pull() (exports every module to
     // <workbookDir>/src/<Kind>/<name>.ext, the same convention DapSession.HandleLaunch and
-    // RunStale below both assume), prints a success marker, exits.
+    // RunStale below both assume), prints a success marker, exits. The resolved srcDir is part of
+    // that marker because it is derived from the WORKBOOK's directory, which is not guaranteed to
+    // be the folder open in VS Code - the extension shows this path back to the user so a pull
+    // into a directory they aren't looking at is at least visible rather than silent.
     private static void RunPull()
     {
-        ExcelMessageFilter.Register();
-        try
+        WithActiveWorkbook((excel, workbook, workbookDir) =>
         {
-            var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
-            var workbook = excel.ActiveWorkbook;
-            if (workbook == null)
-            {
-                Console.Error.WriteLine("No active workbook in the running Excel instance.");
-                Environment.Exit(1);
-                return;
-            }
-
-            var workbookDir = Path.GetDirectoryName(workbook.FullName) ?? ".";
             var srcDir = Path.Combine(workbookDir, "src");
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var syncEngine = new SyncEngine(access, new FileSystem(), srcDir);
             syncEngine.Pull();
-            Console.WriteLine("{\"success\":true}");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            Environment.Exit(1);
-        }
-        finally
-        {
-            ExcelMessageFilter.Revoke();
-        }
+            Console.WriteLine(JsonSerializer.Serialize(new { success = true, srcDir }));
+        });
     }
 
     // Same one-shot shape as RunPull - runs SyncEngine.Push() (writes every changed disk file
     // back into the live project). Push's own IsMacroRunning guard - currently a hardcoded false
     // stub, see ExcelVbaProjectAccess.cs - would throw InvalidOperationException here if it ever
-    // becomes real; the catch below already surfaces that cleanly as a stderr message.
+    // becomes real; WithActiveWorkbook's catch already surfaces that cleanly as a stderr message.
     private static void RunPush()
     {
-        ExcelMessageFilter.Register();
-        try
+        WithActiveWorkbook((excel, workbook, workbookDir) =>
         {
-            var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
-            var workbook = excel.ActiveWorkbook;
-            if (workbook == null)
-            {
-                Console.Error.WriteLine("No active workbook in the running Excel instance.");
-                Environment.Exit(1);
-                return;
-            }
-
-            var workbookDir = Path.GetDirectoryName(workbook.FullName) ?? ".";
             var srcDir = Path.Combine(workbookDir, "src");
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var syncEngine = new SyncEngine(access, new FileSystem(), srcDir);
             syncEngine.Push();
             Console.WriteLine("{\"success\":true}");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            Environment.Exit(1);
-        }
-        finally
-        {
-            ExcelMessageFilter.Revoke();
-        }
+        });
     }
 
     // Reads the named module's current Excel code and its corresponding disk file (if any), and
@@ -176,19 +167,8 @@ internal class Program
     // a separate error path, matching the spec's error-handling section.
     private static void RunStale(string moduleName)
     {
-        ExcelMessageFilter.Register();
-        try
+        WithActiveWorkbook((excel, workbook, workbookDir) =>
         {
-            var excel = (Excel.Application)ComHelpers.GetRunningInstance("Excel.Application");
-            var workbook = excel.ActiveWorkbook;
-            if (workbook == null)
-            {
-                Console.Error.WriteLine("No active workbook in the running Excel instance.");
-                Environment.Exit(1);
-                return;
-            }
-
-            var workbookDir = Path.GetDirectoryName(workbook.FullName) ?? ".";
             var access = new ExcelVbaProjectAccess(workbook.VBProject);
             var modules = access.ReadAll();
             var targetModule = modules.FirstOrDefault(
@@ -207,15 +187,6 @@ internal class Program
 
             var stale = StaleChecker.IsStale(diskContent, targetModule.Code);
             Console.WriteLine(JsonSerializer.Serialize(new { stale }));
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            Environment.Exit(1);
-        }
-        finally
-        {
-            ExcelMessageFilter.Revoke();
-        }
+        });
     }
 }
