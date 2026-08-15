@@ -151,7 +151,14 @@ public sealed class DapSession
     {
         var capabilities = new Capabilities(SupportsConfigurationDoneRequest: true);
         SendResponse(request, capabilities);
-        SendEvent("initialized", null);
+        // The "initialized" event is deliberately NOT sent here. It tells the client "send your
+        // configuration requests now", and setBreakpoints - the first thing the client sends in
+        // response - can only report genuine verified status once _launchProbeSites is populated,
+        // which only happens in HandleLaunch. Sending it here races launch: a client that wins
+        // that race gets verified:false for every breakpoint. Emitting it at the end of
+        // HandleLaunch instead makes the ordering guaranteed rather than incidental (the standard
+        // pattern for adapters that need launch arguments before answering configuration
+        // requests).
     }
 
     private void HandleLaunch(DapRequest request)
@@ -184,6 +191,10 @@ public sealed class DapSession
         _launchProbeSites = ComputeLaunchProbeSites(modules, _launchModule, args.EntryPoint);
 
         SendResponse(request, null);
+
+        // See HandleInitialize: emitted here, not there, so that _launchProbeSites is already
+        // populated by the time the client starts sending setBreakpoints.
+        SendEvent("initialized", null);
     }
 
     private void HandleSetBreakpoints(DapRequest request)
@@ -194,10 +205,14 @@ public sealed class DapSession
         var verifiedBreakpoints = BreakpointVerifier.ComputeVerifiedBreakpoints(
             _launchProbeSites, moduleName, args.Breakpoints.Select(bp => bp.Line).ToList());
 
+        // Every requested line goes into the set, verified or not - "verified" affects only the
+        // status reported back to the client. An unverified line has no probe placed at it, so it
+        // can never fire regardless of set membership; filtering the set buys nothing and costs a
+        // silent-drop failure mode if verification was ever computed against incomplete state.
         lock (_breakpointsLock)
         {
             _breakpoints.RemoveWhere(bp => bp.Module == moduleName);
-            foreach (var bp in verifiedBreakpoints.Where(bp => bp.Verified))
+            foreach (var bp in verifiedBreakpoints.Where(bp => bp.Line.HasValue))
             {
                 _breakpoints.Add((moduleName, bp.Line!.Value));
             }
