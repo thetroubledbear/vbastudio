@@ -27,3 +27,10 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal planning/spec trail from the AI-assisted build process - not part of the public repo
+docs/superpowers/
+.superpowers/
+
+# Site source - built and published separately, not part of the source repo
+website/
