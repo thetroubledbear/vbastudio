@@ -114,16 +114,20 @@ export async function configureLaunch(): Promise<void> {
     return;
   }
 
-  const newConfig = await writeLaunchConfig(
-    folder,
-    result.workbookPath,
-    modulePick.module.name,
-    procedurePick
-  );
+  try {
+    const newConfig = await writeLaunchConfig(
+      folder,
+      result.workbookPath,
+      modulePick.module.name,
+      procedurePick
+    );
 
-  const start = await vscode.window.showInformationMessage("Start debugging now?", "Yes");
-  if (start === "Yes") {
-    await vscode.debug.startDebugging(folder, newConfig);
+    const start = await vscode.window.showInformationMessage("Start debugging now?", "Yes");
+    if (start === "Yes") {
+      await vscode.debug.startDebugging(folder, newConfig);
+    }
+  } catch (err: any) {
+    vscode.window.showErrorMessage(err?.message ?? String(err));
   }
 }
 
@@ -166,7 +170,7 @@ export async function goToProcedure(): Promise<void> {
   }
 
   const pick = await vscode.window.showQuickPick(items, {
-    placeHolder: "Go to procedure...",
+    placeHolder: "Run procedure...",
     matchOnDescription: true,
   });
   if (!pick) {

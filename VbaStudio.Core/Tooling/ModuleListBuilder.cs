@@ -17,13 +17,16 @@ public sealed record ModuleListResult(
 public static class ModuleListBuilder
 {
     // Application.Run("Module.Procedure") - the only mechanism this codebase launches VBA
-    // entry points through - can only call a Sub or Function in a standard module, and can never
-    // supply arguments. Class module members have no instance to call them on; a required
-    // parameter has no value to be supplied; a Property Get/Let/Set is not addressable by
-    // Application.Run at all. Listing any of them as a runnable target produces a deterministic
-    // failure from Application.Run (DISP_E_PARAMNOTOPTIONAL - "Parameter not optional" - for the
-    // parameter case, confirmed live against a real workbook) - this filter is what keeps the
-    // picker showing only entries that can actually be launched.
+    // entry points through - can only call a Sub or Function in a standard module, can never
+    // supply arguments, and per Microsoft's own documentation must target a Public procedure.
+    // Class module members have no instance to call them on; a required parameter has no value
+    // to be supplied; a Property Get/Let/Set is not addressable by Application.Run at all; a
+    // Private (or Friend - not valid on a standard-module procedure, but handled the same way if
+    // it ever appears) procedure is not visible to Application.Run from outside the module.
+    // Listing any of them as a runnable target produces a deterministic failure from
+    // Application.Run (DISP_E_PARAMNOTOPTIONAL - "Parameter not optional" - for the parameter
+    // case, confirmed live against a real workbook) - this filter is what keeps the picker
+    // showing only entries that can actually be launched.
     public static ModuleListResult Build(string workbookPath, IReadOnlyList<VbaModule> modules)
     {
         var listings = modules
@@ -32,6 +35,7 @@ public static class ModuleListBuilder
                 m.Name,
                 VbaParser.ParseModule(m.Code, m.Name).Procedures
                     .Where(p => p.Kind == ProcedureKind.Sub || p.Kind == ProcedureKind.Function)
+                    .Where(p => p.Visibility == ProcedureVisibility.Public)
                     .Where(p => p.Parameters.All(param => param.IsOptional))
                     .Select(p => p.Name)
                     .ToList()))

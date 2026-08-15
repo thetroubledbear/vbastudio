@@ -27,6 +27,50 @@ public class VbaParserTests
     }
 
     [Fact]
+    public void ParseModule_PublicSub_VisibilityIsPublic()
+    {
+        var source = "Public Sub DoWork()\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var proc = Assert.Single(result.Procedures);
+        Assert.Equal(ProcedureVisibility.Public, proc.Visibility);
+    }
+
+    [Fact]
+    public void ParseModule_PrivateSub_VisibilityIsPrivate()
+    {
+        var source = "Private Sub Helper()\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var proc = Assert.Single(result.Procedures);
+        Assert.Equal(ProcedureVisibility.Private, proc.Visibility);
+    }
+
+    [Fact]
+    public void ParseModule_SubWithNoVisibilityKeyword_DefaultsToPublic()
+    {
+        var source = "Sub DoWork()\r\nEnd Sub\r\n";
+
+        var result = VbaParser.ParseModule(source, "modWork");
+
+        var proc = Assert.Single(result.Procedures);
+        Assert.Equal(ProcedureVisibility.Public, proc.Visibility);
+    }
+
+    [Fact]
+    public void ParseModule_FriendFunction_VisibilityIsFriend()
+    {
+        var source = "Friend Function Calc() As Long\r\n    Calc = 1\r\nEnd Function\r\n";
+
+        var result = VbaParser.ParseModule(source, "clsWork");
+
+        var proc = Assert.Single(result.Procedures);
+        Assert.Equal(ProcedureVisibility.Friend, proc.Visibility);
+    }
+
+    [Fact]
     public void ParseModule_FunctionWithReturnType_DetectsBoundary()
     {
         var source = "Public Function Compute() As Long\r\n" +

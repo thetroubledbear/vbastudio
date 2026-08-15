@@ -7,6 +7,8 @@ public enum SymbolKind { Parameter, Local, Const, ModuleVariable }
 
 public enum ProcedureKind { Sub, Function, PropertyGet, PropertyLet, PropertySet }
 
+public enum ProcedureVisibility { Public, Private, Friend }
+
 public sealed record Symbol(
     string Name,
     string DeclaredType,
@@ -18,6 +20,7 @@ public sealed record Symbol(
 public sealed record ProcedureSymbols(
     string Name,
     ProcedureKind Kind,
+    ProcedureVisibility Visibility,
     int StartLine,
     int EndLine,
     IReadOnlyList<Symbol> Parameters,

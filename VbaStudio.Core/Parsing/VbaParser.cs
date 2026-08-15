@@ -10,7 +10,7 @@ namespace VbaStudio.Core.Parsing;
 public static class VbaParser
 {
     private static readonly Regex ProcedureHeaderPattern = new(
-        @"^\s*(?:(?:Public|Private|Friend)\s+)?(?:Static\s+)?(?<kind>Sub|Function|Property\s+Get|Property\s+Let|Property\s+Set)\s+(?<name>\w+)\s*\((?<params>(?:[^()]|\(\))*)\)(?:\s+As\s+[\w.]+(?:\(\))?)?\s*$",
+        @"^\s*(?:(?<visibility>Public|Private|Friend)\s+)?(?:Static\s+)?(?<kind>Sub|Function|Property\s+Get|Property\s+Let|Property\s+Set)\s+(?<name>\w+)\s*\((?<params>(?:[^()]|\(\))*)\)(?:\s+As\s+[\w.]+(?:\(\))?)?\s*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ProcedureEndPattern = new(
@@ -45,6 +45,7 @@ public static class VbaParser
             }
 
             var kind = ParseProcedureKind(headerMatch.Groups["kind"].Value);
+            var visibility = ParseProcedureVisibility(headerMatch.Groups["visibility"].Value);
             var name = headerMatch.Groups["name"].Value;
             var startLine = joined[i].StartPhysicalLine;
 
@@ -76,6 +77,7 @@ public static class VbaParser
             procedures.Add(new ProcedureSymbols(
                 name,
                 kind,
+                visibility,
                 startLine,
                 endLine,
                 Parameters: ParseParameters(headerMatch.Groups["params"].Value),
@@ -109,6 +111,17 @@ public static class VbaParser
             "property let" => ProcedureKind.PropertyLet,
             "property set" => ProcedureKind.PropertySet,
             _ => ProcedureKind.Sub,
+        };
+    }
+
+    // Absent visibility keyword means Public - VBA's own default for module-level procedures.
+    private static ProcedureVisibility ParseProcedureVisibility(string rawVisibility)
+    {
+        return rawVisibility.ToLowerInvariant() switch
+        {
+            "private" => ProcedureVisibility.Private,
+            "friend" => ProcedureVisibility.Friend,
+            _ => ProcedureVisibility.Public,
         };
     }
 
