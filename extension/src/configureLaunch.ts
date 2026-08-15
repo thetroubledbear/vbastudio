@@ -6,14 +6,62 @@ import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./
 
 const execFileAsync = promisify(execFile);
 
-interface ModuleListing {
+export interface ModuleListing {
   name: string;
   procedures: string[];
 }
 
-interface ModuleListResult {
+export interface ModuleListResult {
   workbookPath: string;
   modules: ModuleListing[];
+}
+
+// Shells out to `<serverPath> list` and parses its JSON stdout. Throws a plain Error with a
+// ready-to-display message on failure - callers decide how to surface it (a dialog for a
+// deliberately-triggered command, a tree node for a background/render-time fetch).
+export async function runList(serverPath: string): Promise<ModuleListResult> {
+  try {
+    const { stdout } = await execFileAsync(serverPath, ["list"]);
+    return JSON.parse(stdout);
+  } catch (err: any) {
+    const stderrText: string | undefined = err?.stderr?.toString().trim();
+    throw new Error(stderrText || `Failed to list modules: ${err?.message ?? String(err)}`);
+  }
+}
+
+// Writes or updates (matched by "name") a launch.json entry for the given module/procedure.
+// Returns the resolved config - the caller decides whether/when to start debugging with it.
+export async function writeLaunchConfig(
+  folder: vscode.WorkspaceFolder,
+  workbookPath: string,
+  moduleName: string,
+  procedureName: string
+): Promise<vscode.DebugConfiguration> {
+  const entryPoint = `${moduleName}.${procedureName}`;
+  const name = `VbaStudio: ${entryPoint}`;
+  const newConfig: vscode.DebugConfiguration = {
+    type: "vbastudio",
+    request: "launch",
+    name,
+    program: workbookPath,
+    entryPoint,
+  };
+
+  const launchConfig = vscode.workspace.getConfiguration("launch", folder.uri);
+  const configurations = launchConfig.get<any[]>("configurations", []).slice();
+  const existingIndex = configurations.findIndex((c) => c.name === name);
+  if (existingIndex >= 0) {
+    configurations[existingIndex] = newConfig;
+  } else {
+    configurations.push(newConfig);
+  }
+  await launchConfig.update(
+    "configurations",
+    configurations,
+    vscode.ConfigurationTarget.WorkspaceFolder
+  );
+
+  return newConfig;
 }
 
 export async function configureLaunch(): Promise<void> {
@@ -37,13 +85,9 @@ export async function configureLaunch(): Promise<void> {
 
   let result: ModuleListResult;
   try {
-    const { stdout } = await execFileAsync(serverPath, ["list"]);
-    result = JSON.parse(stdout);
+    result = await runList(serverPath);
   } catch (err: any) {
-    const stderrText: string | undefined = err?.stderr?.toString().trim();
-    vscode.window.showErrorMessage(
-      stderrText || `Failed to list modules: ${err?.message ?? String(err)}`
-    );
+    vscode.window.showErrorMessage(err?.message ?? String(err));
     return;
   }
 
@@ -76,28 +120,11 @@ export async function configureLaunch(): Promise<void> {
     return;
   }
 
-  const entryPoint = `${modulePick.module.name}.${procedurePick}`;
-  const name = `VbaStudio: ${entryPoint}`;
-  const newConfig = {
-    type: "vbastudio",
-    request: "launch",
-    name,
-    program: result.workbookPath,
-    entryPoint,
-  };
-
-  const launchConfig = vscode.workspace.getConfiguration("launch", folder.uri);
-  const configurations = launchConfig.get<any[]>("configurations", []).slice();
-  const existingIndex = configurations.findIndex((c) => c.name === name);
-  if (existingIndex >= 0) {
-    configurations[existingIndex] = newConfig;
-  } else {
-    configurations.push(newConfig);
-  }
-  await launchConfig.update(
-    "configurations",
-    configurations,
-    vscode.ConfigurationTarget.WorkspaceFolder
+  const newConfig = await writeLaunchConfig(
+    folder,
+    result.workbookPath,
+    modulePick.module.name,
+    procedurePick
   );
 
   const start = await vscode.window.showInformationMessage("Start debugging now?", "Yes");
