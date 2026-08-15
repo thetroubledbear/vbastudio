@@ -2,7 +2,7 @@
   "name": "vbastudio-debug",
   "displayName": "VbaStudio Debugger",
   "description": "Debug Adapter Protocol client for vbastudio - F5 debugging of Excel VBA via VbaStudio.DapServer.exe",
-  "version": "0.0.2",
+  "version": "0.0.1",
   "publisher": "vbastudio",
   "private": true,
   "engines": {
