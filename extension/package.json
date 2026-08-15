@@ -23,6 +23,16 @@
     "typescript": "^5.4.0"
   },
   "contributes": {
+    "commands": [
+      {
+        "command": "vbastudio.configureLaunch",
+        "title": "VbaStudio: Configure Launch Target"
+      },
+      {
+        "command": "vbastudio.setDapServerPath",
+        "title": "VbaStudio: Set DapServer.exe Path..."
+      }
+    ],
     "configuration": {
       "title": "VbaStudio",
       "properties": {
