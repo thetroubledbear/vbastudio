@@ -1,9 +1,12 @@
 // extension/src/extension.ts
 import * as vscode from "vscode";
 import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
-import { configureLaunch } from "./configureLaunch";
+import { configureLaunch, writeLaunchConfig } from "./configureLaunch";
+import { ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
 
 export function activate(context: vscode.ExtensionContext) {
+  const treeProvider = new ModuleTreeProvider();
+
   context.subscriptions.push(
     vscode.debug.registerDebugAdapterDescriptorFactory("vbastudio", {
       createDebugAdapterDescriptor(): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
@@ -29,8 +32,31 @@ export function activate(context: vscode.ExtensionContext) {
         return config;
       },
     }),
-    vscode.commands.registerCommand("vbastudio.setDapServerPath", () => promptToBrowseForServer()),
-    vscode.commands.registerCommand("vbastudio.configureLaunch", () => configureLaunch())
+    vscode.commands.registerCommand("vbastudio.setDapServerPath", async () => {
+      await promptToBrowseForServer();
+      treeProvider.refresh();
+    }),
+    vscode.commands.registerCommand("vbastudio.configureLaunch", () => configureLaunch()),
+    vscode.window.registerTreeDataProvider("vbastudioModules", treeProvider),
+    vscode.commands.registerCommand("vbastudio.refreshModules", () => treeProvider.refresh()),
+    vscode.commands.registerCommand(
+      "vbastudio.runProcedureFromTree",
+      async (node: ProcedureNode) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) {
+          vscode.window.showErrorMessage("Open a folder to configure launch.json.");
+          return;
+        }
+
+        const config = await writeLaunchConfig(
+          folder,
+          node.workbookPath,
+          node.moduleName,
+          node.name
+        );
+        await vscode.debug.startDebugging(folder, config);
+      }
+    )
   );
 }
 
