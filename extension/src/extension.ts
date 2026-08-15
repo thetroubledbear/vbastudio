@@ -1,14 +1,25 @@
 // extension/src/extension.ts
 import * as vscode from "vscode";
 import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
-import { configureLaunch, writeLaunchConfig } from "./configureLaunch";
+import { configureLaunch, goToProcedure, writeLaunchConfig } from "./configureLaunch";
 import { ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
 import { confirmStaleOrProceed, pullModules, pushModules } from "./sync";
 
 export function activate(context: vscode.ExtensionContext) {
   const treeProvider = new ModuleTreeProvider();
 
+  const goToProcedureStatusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+  goToProcedureStatusBarItem.text = "$(list-selection) VbaStudio";
+  goToProcedureStatusBarItem.tooltip = "VbaStudio: Go to Procedure...";
+  goToProcedureStatusBarItem.command = "vbastudio.goToProcedure";
+  goToProcedureStatusBarItem.show();
+
   context.subscriptions.push(
+    goToProcedureStatusBarItem,
+    vscode.commands.registerCommand("vbastudio.goToProcedure", () => goToProcedure()),
     vscode.debug.registerDebugAdapterDescriptorFactory("vbastudio", {
       createDebugAdapterDescriptor(): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
         return new vscode.DebugAdapterExecutable(getDapServerPath(), []);

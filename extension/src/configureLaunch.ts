@@ -138,3 +138,70 @@ export async function configureLaunch(): Promise<void> {
     await vscode.debug.startDebugging(folder, newConfig);
   }
 }
+
+// One flat, searchable QuickPick over every runnable procedure across every module - unlike
+// configureLaunch()'s two-step module-then-procedure picker, this is the fast path: type a few
+// letters of any procedure name (or module name, via matchOnDescription) and run it in one step,
+// no confirmation - matching the tree's one-click feel.
+export async function goToProcedure(): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showErrorMessage("Open a folder to configure launch.json.");
+    return;
+  }
+
+  const serverPath = getDapServerPath();
+  if (!isValidServerPath(serverPath)) {
+    const action = await vscode.window.showErrorMessage(
+      "vbastudio.dapServerPath is not set to a valid VbaStudio.DapServer.exe. Set it before running a procedure.",
+      "Browse..."
+    );
+    if (action === "Browse...") {
+      await promptToBrowseForServer();
+    }
+    return;
+  }
+
+  let result: ModuleListResult;
+  try {
+    result = await runList(serverPath);
+  } catch (err: any) {
+    vscode.window.showErrorMessage(err?.message ?? String(err));
+    return;
+  }
+
+  const items = result.modules.flatMap((m) =>
+    m.procedures.map((p) => ({
+      label: p,
+      description: m.name,
+      moduleName: m.name,
+      procedureName: p,
+    }))
+  );
+
+  if (items.length === 0) {
+    vscode.window.showInformationMessage("No runnable procedures found in the active workbook.");
+    return;
+  }
+
+  const pick = await vscode.window.showQuickPick(items, {
+    placeHolder: "Go to procedure...",
+    matchOnDescription: true,
+  });
+  if (!pick) {
+    return;
+  }
+
+  const shouldProceed = await confirmStaleOrProceed(pick.moduleName);
+  if (!shouldProceed) {
+    return;
+  }
+
+  const config = await writeLaunchConfig(
+    folder,
+    result.workbookPath,
+    pick.moduleName,
+    pick.procedureName
+  );
+  await vscode.debug.startDebugging(folder, config);
+}

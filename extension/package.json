@@ -65,6 +65,10 @@
         "title": "VbaStudio: Configure Launch Target"
       },
       {
+        "command": "vbastudio.goToProcedure",
+        "title": "VbaStudio: Go to Procedure..."
+      },
+      {
         "command": "vbastudio.setDapServerPath",
         "title": "VbaStudio: Set DapServer.exe Path..."
       },
