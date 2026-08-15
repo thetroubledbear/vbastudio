@@ -3,6 +3,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import * as vscode from "vscode";
 import { getDapServerPath, isValidServerPath, promptToBrowseForServer } from "./config";
+import { confirmStaleOrProceed } from "./sync";
 
 const execFileAsync = promisify(execFile);
 
@@ -117,6 +118,11 @@ export async function configureLaunch(): Promise<void> {
     placeHolder: "Select a procedure",
   });
   if (!procedurePick) {
+    return;
+  }
+
+  const shouldProceed = await confirmStaleOrProceed(modulePick.module.name);
+  if (!shouldProceed) {
     return;
   }
 
