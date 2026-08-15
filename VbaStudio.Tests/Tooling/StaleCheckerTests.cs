@@ -23,4 +23,16 @@ public class StaleCheckerTests
     {
         Assert.True(StaleChecker.IsStale(null, "Sub A()\r\nEnd Sub\r\n"));
     }
+
+    [Fact]
+    public void IsStale_TrailingNewlineDifferenceOnly_ReturnsFalse()
+    {
+        Assert.False(StaleChecker.IsStale("Sub A()\r\nEnd Sub\r\n\r\n", "Sub A()\r\nEnd Sub"));
+    }
+
+    [Fact]
+    public void IsStale_LineEndingDifferenceOnly_ReturnsFalse()
+    {
+        Assert.False(StaleChecker.IsStale("Sub A()\nEnd Sub\n", "Sub A()\r\nEnd Sub\r\n"));
+    }
 }

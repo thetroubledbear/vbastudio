@@ -77,6 +77,21 @@ public class ModuleListBuilderTests
     }
 
     [Fact]
+    public void Build_PropertyGet_Excluded()
+    {
+        var source = "Public Property Get Foo() As Long\r\n" +
+                      "    Foo = 1\r\n" +
+                      "End Property\r\n" +
+                      "Public Sub NoArgs()\r\nEnd Sub\r\n";
+        var modules = new[] { new VbaModule("modWork", ModuleKind.Standard, source, ".bas") };
+
+        var result = ModuleListBuilder.Build(@"C:\work\Reporting.xlsm", modules);
+
+        var listing = Assert.Single(result.Modules);
+        Assert.Equal(new[] { "NoArgs" }, listing.Procedures);
+    }
+
+    [Fact]
     public void Build_ProcedureWithOnlyOptionalParameters_StillIncluded()
     {
         var source = "Public Sub MaybeArg(Optional x As Long)\r\nEnd Sub\r\n";
