@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>vbastudio — Debug Excel VBA from VS Code</title>
+<meta name="description" content="vbastudio brings real debugging — breakpoints, locals, step-through — to Excel VBA, from inside VS Code. Your code lives on disk, in git, and stays in sync with Excel." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="container">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      vbastudio
+    </a>
+    <div class="nav-links">
+      <a href="install.html">Get started</a>
+      <a class="cta" href="documentation.html">Documentation</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="container hero-grid">
+    <div>
+      <span class="cell-label">A1</span>
+      <h1>Debug VBA the way you<br />debug <span class="accent">everything else.</span></h1>
+      <p class="lede">
+        vbastudio is an external IDE for Excel VBA. Set real breakpoints in VS Code,
+        inspect locals when execution stops, and step through code that still runs
+        inside a live, real Excel workbook — no more staring at the VBE's Immediate
+        Window guessing what a variable holds.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="install.html">Get started →</a>
+        <a class="btn btn-secondary" href="#how-it-works">See how it works</a>
+      </div>
+    </div>
+
+    <div class="bridge" role="img" aria-label="A spreadsheet cell containing VBA code, bridged to a VS Code-style editor with a breakpoint set on the same line">
+      <div class="pane pane-excel">
+        <div class="pane-title"><span class="dot"></span><span class="name">Report.xlsm — ModMain</span></div>
+        <div class="grid-mock">
+          <div class="cell colhead"></div>
+          <div class="cell colhead">A</div>
+          <div class="cell colhead">B</div>
+          <div class="cell colhead">C</div>
+
+          <div class="cell rowhead">7</div>
+          <div class="cell">Sub</div>
+          <div class="cell">ReadProducts</div>
+          <div class="cell">()</div>
+
+          <div class="cell rowhead active">8</div>
+          <div class="cell active">Set</div>
+          <div class="cell active err">rg</div>
+          <div class="cell active">= ...</div>
+
+          <div class="cell rowhead">9</div>
+          <div class="cell">Next</div>
+          <div class="cell"></div>
+          <div class="cell"></div>
+        </div>
+      </div>
+
+      <div class="bridge-link" aria-hidden="true">
+        <span class="arrow">⇄</span>
+        <span class="label">SYNC</span>
+      </div>
+
+      <div class="pane pane-code">
+        <div class="pane-title"><span class="dot"></span><span class="name">ModMain.bas — VS Code</span></div>
+        <div class="code-mock">
+          <div class="code-line"><span class="ln">6</span><span class="bp"></span><span><span class="tok-kw">Sub</span> ReadProducts()</span></div>
+          <div class="code-line has-bp current"><span class="ln">7</span><span class="bp"></span><span>&nbsp;&nbsp;<span class="tok-fn">Set</span> rg = shBooks.Range(<span class="tok-str">"A1"</span>)</span></div>
+          <div class="code-line"><span class="ln">8</span><span class="bp"></span><span>&nbsp;&nbsp;<span class="tok-cm">' locals: rg = Nothing</span></span></div>
+          <div class="code-line"><span class="ln">9</span><span class="bp"></span><span><span class="tok-kw">End Sub</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="tight">
+  <div class="container">
+    <span class="cell-label">B2</span>
+    <h2>Everything the VBE never gave you</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <h3>Real breakpoints</h3>
+        <p>Click the gutter in VS Code. Execution actually stops there, inside your live workbook — not a guess, a real pause.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Inspect locals</h3>
+        <p>See every variable's current value the moment you're paused, in the Variables pane — no more <code>Debug.Print</code> archaeology.</p>
+      </div>
+      <div class="feature-card">
+        <h3>One-click run</h3>
+        <p>A sidebar tree of every module and procedure, plus a status-bar quick-jump — type a name, hit enter, it runs.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Text on disk</h3>
+        <p>Your VBA source lives as real <code>.bas</code>/<code>.cls</code> files, under git, diffable and reviewable like any other code.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Two-way sync</h3>
+        <p>Pull code from Excel to disk, edit in VS Code, push it back. If both sides changed since the last sync, vbastudio flags the conflict instead of silently overwriting — deletions sync too.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Excel stays Excel</h3>
+        <p>No add-in to install inside Excel, no macro security to fight. vbastudio drives the workbook you already have open.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <div class="container">
+    <span class="cell-label">C3</span>
+    <h2>How it fits together</h2>
+    <p class="lede">Excel keeps running your workbook. VS Code is where you read, edit, and debug the code. Nothing moves without you asking it to.</p>
+    <div class="flow">
+      <div class="flow-step">
+        <span class="cell-label">A1</span>
+        <h3>Pull</h3>
+        <p>Copy every module's current code from Excel down to a <code>src/</code> folder on disk.</p>
+      </div>
+      <div class="flow-step">
+        <span class="cell-label">B2</span>
+        <h3>Edit</h3>
+        <p>Read, search, and change VBA source like any other file — full editor, real syntax, real git history.</p>
+      </div>
+      <div class="flow-step">
+        <span class="cell-label">C3</span>
+        <h3>Push</h3>
+        <p>Write your changes back into the live VBA project. Excel picks them up immediately.</p>
+      </div>
+      <div class="flow-step">
+        <span class="cell-label">D4</span>
+        <h3>Debug</h3>
+        <p>Set a breakpoint, press F5. Excel runs the procedure; VS Code shows you exactly where it stopped and why.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="container">
+    <h2>Bring VS Code to your VBA project</h2>
+    <p class="lede" style="margin-inline:auto;">
+      vbastudio is built from source today — no marketplace install yet. The setup guide
+      walks through it step by step, no prior VS Code or .NET experience assumed.
+    </p>
+    <a class="btn btn-primary" href="install.html">Read the setup guide →</a>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <span>vbastudio — an external IDE for Excel VBA.</span>
+    <span><a href="../README.md">Project README</a></span>
+    <span><a href="../LICENSE">MIT License</a></span>
+  </div>
+  <div class="container">
+    <span class="footer-disclaimer">
+      vbastudio is an independent, unaffiliated project. It is not sponsored by, endorsed by, or
+      affiliated with Microsoft Corporation. Excel, VBA, Visual Studio, and Visual Studio Code
+      are trademarks of Microsoft Corporation.
+    </span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Documentation — vbastudio</title>
+<meta name="description" content="vbastudio documentation: setup, running and debugging, syncing code, a command reference, architecture, how the instrumentation-based debugger works, and known capabilities and limitations." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="container">
+    <a class="brand" href="index.html">
+      <span class="brand-mark" aria-hidden="true"></span>
+      vbastudio
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+    </div>
+  </div>
+</nav>
+
+<header class="docs-hero">
+  <div class="container">
+    <span class="cell-label">D4</span>
+    <h1 style="font-size: var(--fs-h2);">Documentation</h1>
+    <p class="lede">Everything you need to build, install, and use vbastudio — start to finish.</p>
+  </div>
+</header>
+
+<div class="container">
+  <details class="docs-mobile-nav">
+    <summary>Contents</summary>
+    <nav>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Overview</div>
+        <a href="#getting-started">Getting started</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Setup</div>
+        <a href="#prerequisites">Prerequisites</a>
+        <a href="#build-broker">Build the broker</a>
+        <a href="#build-extension">Build the extension</a>
+        <a href="#install-extension">Install the extension</a>
+        <a href="#configure">Configure the server path</a>
+        <a href="#open-workbook">Open your workbook</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Using vbastudio</div>
+        <a href="#pull-code">Pull your code</a>
+        <a href="#run-debug">Run or debug</a>
+        <a href="#sync">Sync &amp; stale warnings</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Reference</div>
+        <a href="#commands">Command reference</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">For developers</div>
+        <a href="#architecture">Architecture</a>
+        <a href="#how-debugging-works">How debugging works</a>
+        <a href="#instrumentation-rules">Instrumentation rules</a>
+        <a href="#probe-protocol">Agent.Probe wire protocol</a>
+        <a href="#dap-surface">DAP surface</a>
+        <a href="#cli-contracts">CLI mode contracts</a>
+        <a href="#module-encoding">Module kinds &amp; encoding</a>
+        <a href="#project-layout">Project layout</a>
+        <a href="#building-vbastudio">Building vbastudio itself</a>
+        <a href="#capabilities">Capabilities &amp; limitations</a>
+      </div>
+    </nav>
+  </details>
+
+  <div class="docs-shell">
+    <nav class="docs-sidebar" aria-label="Documentation sections">
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Overview</div>
+        <a href="#getting-started">Getting started</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Setup</div>
+        <a href="#prerequisites">Prerequisites</a>
+        <a href="#build-broker">Build the broker</a>
+        <a href="#build-extension">Build the extension</a>
+        <a href="#install-extension">Install the extension</a>
+        <a href="#configure">Configure the server path</a>
+        <a href="#open-workbook">Open your workbook</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Using vbastudio</div>
+        <a href="#pull-code">Pull your code</a>
+        <a href="#run-debug">Run or debug</a>
+        <a href="#sync">Sync &amp; stale warnings</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">Reference</div>
+        <a href="#commands">Command reference</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+      </div>
+      <div class="docs-nav-group">
+        <div class="docs-nav-group-title">For developers</div>
+        <a href="#architecture">Architecture</a>
+        <a href="#how-debugging-works">How debugging works</a>
+        <a href="#instrumentation-rules">Instrumentation rules</a>
+        <a href="#probe-protocol">Agent.Probe wire protocol</a>
+        <a href="#dap-surface">DAP surface</a>
+        <a href="#cli-contracts">CLI mode contracts</a>
+        <a href="#module-encoding">Module kinds &amp; encoding</a>
+        <a href="#project-layout">Project layout</a>
+        <a href="#building-vbastudio">Building vbastudio itself</a>
+        <a href="#capabilities">Capabilities &amp; limitations</a>
+      </div>
+    </nav>
+
+    <main class="docs-content">
+
+      <h2 id="getting-started">Getting started</h2>
+      <p>
+        There's no marketplace install yet — you build vbastudio once, from source, on
+        your own machine. It takes about 15 minutes the first time. Nothing on this page
+        assumes you've used VS Code, git, or .NET before; follow the sections in order.
+      </p>
+
+      <h2 id="prerequisites">Prerequisites</h2>
+      <table>
+        <thead>
+          <tr><th>You'll need</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Windows</td><td>Excel automation only works on Windows.</td></tr>
+          <tr><td>Microsoft Excel (desktop)</td><td>vbastudio drives a real, open Excel workbook — it isn't a substitute for Excel.</td></tr>
+          <tr><td><a href="https://code.visualstudio.com/">VS Code</a></td><td>Where you'll edit, set breakpoints, and debug.</td></tr>
+          <tr><td>Visual Studio 2022 <em>or</em> the <a href="https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022">Build Tools for Visual Studio 2022</a>, with the <strong>.NET desktop development</strong> workload</td><td>The broker that talks to Excel is a C# project with COM references — it needs full MSBuild to compile, not just the <code>dotnet</code> CLI.</td></tr>
+          <tr><td><a href="https://nodejs.org/">Node.js</a> (LTS)</td><td>Used to build and package the VS Code extension itself.</td></tr>
+          <tr><td>This repository, downloaded or cloned</td><td>There's nothing to install from a package manager yet — you're building straight from source.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <div class="callout-title">⚠ One Excel setting to check first</div>
+        <p>
+          Excel blocks automated access to the VBA project by default. In Excel:
+          <strong>File → Options → Trust Center → Trust Center Settings → Macro Settings</strong>,
+          check <strong>"Trust access to the VBA project object model."</strong> Without this,
+          every step below fails with a permissions error.
+        </p>
+      </div>
+
+      <h2 id="build-broker">Build the broker</h2>
+      <p>
+        The broker is the C# process that actually talks to Excel. Open a terminal in the
+        repository's <code>vbastudio/</code> folder and run:
+      </p>
+      <div class="code-block">
+        <pre><code>"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe" VbaStudio.sln /p:Configuration=Debug /m</code></pre>
+      </div>
+      <p>
+        (Adjust the path if you installed a different Visual Studio edition or the Build
+        Tools — look for <code>MSBuild.exe</code> under your install folder.) This produces:
+      </p>
+      <div class="code-block">
+        <pre><code>VbaStudio.DapServer\bin\Debug\net8.0-windows\VbaStudio.DapServer.exe</code></pre>
+      </div>
+      <p>Note that path — you'll need it in <a href="#configure">Configure the server path</a>.</p>
+
+      <h2 id="build-extension">Build the extension</h2>
+      <p>From the repository's <code>extension/</code> folder:</p>
+      <div class="code-block">
+        <pre><code>npm install
+npm run compile
+npm run package</code></pre>
+      </div>
+      <p>This produces a file named something like <code>vbastudio-debug-0.0.1.vsix</code> in that same folder.</p>
+
+      <h2 id="install-extension">Install the extension</h2>
+      <div class="code-block">
+        <pre><code>code --install-extension "C:\full\path\to\vbastudio-debug-0.0.1.vsix"</code></pre>
+      </div>
+      <p>
+        Then run <strong>Developer: Reload Window</strong> from the Command Palette
+        (<code>Ctrl+Shift+P</code>) so VS Code picks it up.
+      </p>
+
+      <h2 id="configure">Configure the server path</h2>
+      <p>
+        Open Settings, search for <code>vbastudio.dapServerPath</code>, and set it to the
+        full path noted in <a href="#build-broker">Build the broker</a>. You can also do this
+        from inside VS Code — the Command Palette has
+        <strong>"VbaStudio: Set DapServer.exe Path..."</strong>, which opens a file picker
+        directly.
+      </p>
+
+      <h2 id="open-workbook">Open your workbook</h2>
+      <p>
+        Open the workbook you want to work on in Excel — <strong>make it the active
+        window</strong>, since vbastudio always targets whichever workbook currently has
+        focus. Then open that workbook's folder (or any folder — the workbook's path is
+        stored separately) as a workspace in VS Code.
+      </p>
+
+      <h2 id="pull-code">Pull your code</h2>
+      <p>
+        Click the vbastudio icon in the Activity Bar (the far-left sidebar), then the
+        cloud-download icon in its title bar — or run
+        <strong>"VbaStudio: Pull Modules from Excel"</strong> from the Command Palette.
+        This copies every module's current code into a new <code>src/</code> folder, where
+        you can read and edit it like any other project.
+      </p>
+
+      <h2 id="run-debug">Run or debug</h2>
+      <p>Three ways to run a procedure — pick whichever's fastest:</p>
+      <ul>
+        <li>Click it directly in the vbastudio sidebar tree.</li>
+        <li>Click the <strong>VbaStudio</strong> button in the status bar (bottom right) and type its name.</li>
+        <li>Run <strong>"VbaStudio: Configure Launch Target"</strong> from the Command Palette.</li>
+      </ul>
+      <p>
+        To actually debug: open the module in VS Code, click in the gutter next to a line
+        to set a breakpoint, then run the procedure. Execution stops there, and the
+        Variables pane shows every local in scope.
+      </p>
+
+      <h2 id="sync">Sync &amp; stale warnings</h2>
+      <p>
+        Excel and your <code>src/</code> folder are two independent copies until you
+        explicitly sync them. Pull and Push both compare against a small manifest of
+        what was last synced, so a one-sided edit fast-forwards automatically, while a
+        real conflict — both sides changed since the last sync, and differently — is
+        left untouched and reported instead of silently overwritten:
+      </p>
+      <ul>
+        <li><strong>Pull</strong> brings disk up to date with Excel: modules Excel changed get written, modules you only edited locally are left alone, and modules deleted in Excel are removed from disk too — unless you'd also edited that file locally, in which case it's flagged as a conflict and kept.</li>
+        <li><strong>Push</strong> brings Excel up to date with disk: files you changed get written, Excel-side edits you haven't pulled yet are left alone rather than clobbered, and files you deleted locally are removed from Excel too — except Document/sheet modules, which the VBE won't let you remove.</li>
+      </ul>
+      <p>
+        A conflict is never resolved automatically. VS Code shows a warning naming the
+        module; resolve it by hand — pull or push whichever side should win — then sync
+        again.
+      </p>
+      <p>
+        If you edit a file in VS Code and try to run it without pushing first, vbastudio
+        warns you before running — it'll offer to push and run, or run the old code
+        anyway. Nothing pushes automatically.
+      </p>
+
+      <h2 id="commands">Command reference</h2>
+      <p>Every vbastudio command, from the Command Palette (<code>Ctrl+Shift+P</code>):</p>
+      <table>
+        <thead>
+          <tr><th>Command</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>VbaStudio: Configure Launch Target</code></td><td>Pick a module, then a procedure, and write a launch configuration for it.</td></tr>
+          <tr><td><code>VbaStudio: Run Procedure...</code></td><td>One flat, searchable list of every runnable procedure — pick one and it runs immediately. Also available from the status bar.</td></tr>
+          <tr><td><code>VbaStudio: Set DapServer.exe Path...</code></td><td>Opens a file picker to set <code>vbastudio.dapServerPath</code>.</td></tr>
+          <tr><td><code>VbaStudio: Refresh Modules</code></td><td>Re-reads the module/procedure list from Excel and updates the sidebar tree.</td></tr>
+          <tr><td><code>VbaStudio: Pull Modules from Excel</code></td><td>Copies every module's current code from Excel to <code>src/</code> on disk.</td></tr>
+          <tr><td><code>VbaStudio: Push Modules to Excel</code></td><td>Writes changed files from <code>src/</code> back into the live VBA project.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="architecture">Architecture</h2>
+      <p>
+        vbastudio is two halves: a C# broker that automates Excel over COM, and a VS Code
+        extension that talks to it. Neither half runs inside Excel — there's no add-in to
+        install, no VBA references to add to your project.
+      </p>
+      <figure class="diagram">
+        <svg viewBox="0 0 920 380" role="img" aria-labelledby="arch-diagram-title">
+          <title id="arch-diagram-title">vbastudio architecture: VS Code extension, VbaStudio.DapServer.exe, and Excel</title>
+          <defs>
+            <marker id="arrowGreen" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" style="fill:var(--accent-bright)"></path>
+            </marker>
+            <marker id="arrowBlue" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" style="fill:var(--accent-code)"></path>
+            </marker>
+            <marker id="arrowAmber" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" style="fill:var(--current-line)"></path>
+            </marker>
+          </defs>
+
+          <!-- column headers -->
+          <text x="130" y="28" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">VS Code extension</text>
+          <text x="460" y="28" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">VbaStudio.DapServer.exe</text>
+          <text x="800" y="28" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">Excel</text>
+
+          <!-- extension boxes -->
+          <rect x="20" y="50" width="220" height="56" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="130" y="73" text-anchor="middle" style="fill:var(--text);font-size:13px">Sidebar tree / pickers</text>
+          <text x="130" y="92" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">sync commands</text>
+
+          <rect x="20" y="220" width="220" height="70" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="130" y="245" text-anchor="middle" style="fill:var(--text);font-size:13px">Debug Adapter Client</text>
+          <text x="130" y="264" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">breakpoints, stack,</text>
+          <text x="130" y="280" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">variables, continue</text>
+
+          <!-- broker boxes -->
+          <rect x="350" y="50" width="220" height="56" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="460" y="73" text-anchor="middle" style="fill:var(--text);font-size:13px">CLI modes</text>
+          <text x="460" y="92" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">list / pull / push / stale</text>
+
+          <rect x="350" y="220" width="220" height="56" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="460" y="243" text-anchor="middle" style="fill:var(--text);font-size:13px">DapSession</text>
+          <text x="460" y="262" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">instruments + shadow copy</text>
+
+          <rect x="350" y="310" width="220" height="56" rx="6" style="fill:var(--surface);stroke:var(--accent-code)"></rect>
+          <text x="460" y="333" text-anchor="middle" style="fill:var(--text);font-size:13px">ProbeServer</text>
+          <text x="460" y="352" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">HttpListener :8731</text>
+
+          <!-- excel boxes -->
+          <rect x="680" y="50" width="220" height="56" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="790" y="73" text-anchor="middle" style="fill:var(--text);font-size:13px">VBIDE (COM)</text>
+          <text x="790" y="92" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">VBProject, CodeModule</text>
+
+          <rect x="680" y="220" width="220" height="56" rx="6" style="fill:var(--surface-2);stroke:var(--border-bright)"></rect>
+          <text x="790" y="243" text-anchor="middle" style="fill:var(--text);font-size:13px">ExcelShadowWorkbook</text>
+          <text x="790" y="262" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">throwaway copy</text>
+
+          <rect x="680" y="310" width="220" height="56" rx="6" style="fill:var(--surface);stroke:var(--accent-code)"></rect>
+          <text x="790" y="333" text-anchor="middle" style="fill:var(--text);font-size:13px">Agent.Probe</text>
+          <text x="790" y="352" text-anchor="middle" style="fill:var(--text-muted);font-size:12px">VBA, in shadow copy</text>
+
+          <!-- arrows: row 1, spawn + COM -->
+          <line x1="240" y1="78" x2="345" y2="78" style="stroke:var(--accent-bright);stroke-width:2" marker-end="url(#arrowGreen)"></line>
+          <text x="292" y="70" text-anchor="middle" style="fill:var(--accent-bright);font-size:11px">spawn</text>
+          <line x1="570" y1="78" x2="675" y2="78" style="stroke:var(--accent-bright);stroke-width:2" marker-end="url(#arrowGreen)"></line>
+          <text x="622" y="70" text-anchor="middle" style="fill:var(--accent-bright);font-size:11px">COM</text>
+
+          <!-- arrows: row 2, stdio DAP + COM -->
+          <line x1="240" y1="248" x2="345" y2="248" style="stroke:var(--accent-code);stroke-width:2" marker-end="url(#arrowBlue)"></line>
+          <text x="292" y="240" text-anchor="middle" style="fill:var(--accent-code);font-size:11px">stdio (DAP)</text>
+          <line x1="570" y1="248" x2="675" y2="248" style="stroke:var(--accent-code);stroke-width:2" marker-end="url(#arrowBlue)"></line>
+          <text x="622" y="240" text-anchor="middle" style="fill:var(--accent-code);font-size:11px">COM</text>
+
+          <!-- DapSession instruments down into ProbeServer -->
+          <line x1="460" y1="276" x2="460" y2="306" style="stroke:var(--text-faint);stroke-width:1.5" marker-end="url(#arrowAmber)"></line>
+
+          <!-- blocking POST loop between ProbeServer and Agent.Probe -->
+          <line x1="570" y1="330" x2="675" y2="330" style="stroke:var(--current-line);stroke-width:2" marker-end="url(#arrowAmber)"></line>
+          <line x1="675" y1="348" x2="570" y2="348" style="stroke:var(--current-line);stroke-width:2" marker-end="url(#arrowAmber)"></line>
+          <text x="622" y="322" text-anchor="middle" style="fill:var(--current-line);font-size:11px">POST /probe/ (blocks)</text>
+          <text x="622" y="365" text-anchor="middle" style="fill:var(--current-line);font-size:11px">{"cmd":"continue"|"abort"}</text>
+        </svg>
+      </figure>
+      <p class="diagram-caption">
+        Green: one-shot CLI calls (list/pull/push/stale). Blue: the long-lived DAP session over
+        stdio. Amber: the blocking HTTP loop that <em>is</em> the breakpoint.
+      </p>
+      <p>
+        The blocking POST is the whole trick: <code>Agent.Probe</code> cannot return until
+        <code>ProbeServer</code> answers, so holding that HTTP response is indistinguishable,
+        from VBA's side, from a real breakpoint. See
+        <a href="#how-debugging-works">How debugging works</a> and
+        <a href="#probe-protocol">Agent.Probe wire protocol</a> for the full mechanics.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Piece</th><th>What it owns</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>VbaStudio.Core</code></td>
+            <td>Pure logic, no COM: the VBA parser (procedure and parameter boundaries), the
+              instrumenter (rewrites a procedure to inject probe calls), the sync engine
+              (Pull/Push), and shared models. Fully unit-tested.</td>
+          </tr>
+          <tr>
+            <td><code>VbaStudio.Interop</code></td>
+            <td>The COM layer: <code>Runner</code> drives <code>Application.Run</code> and
+              watches for compile/runtime error dialogs; <code>ExcelVbaProjectAccess</code>
+              reads and writes VBA modules through the VBIDE object model;
+              <code>ExcelShadowWorkbook</code> makes a throwaway copy for debugging;
+              <code>DebugSession</code> wires instrumentation, the shadow copy, and a probe
+              server together for one debug run.</td>
+          </tr>
+          <tr>
+            <td><code>VbaStudio.DapServer</code></td>
+            <td>A small executable with two jobs: speak the Debug Adapter Protocol over
+              stdio (the same protocol VS Code uses for any debugger), and answer the
+              one-shot CLI queries the extension shells out to —
+              <code>list</code>, <code>pull</code>, <code>push</code>, <code>stale</code>.</td>
+          </tr>
+          <tr>
+            <td><code>extension/</code></td>
+            <td>The VS Code client: registers the DAP adapter, the sidebar tree, the
+              module/procedure pickers, and the sync commands. Talks to the broker only by
+              spawning it as a process — no shared code, no direct linking.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2 id="how-debugging-works">How debugging works</h2>
+      <p>
+        VBA has no debugger API to hook into from the outside — there's no equivalent of
+        "attach and set a breakpoint" the way there is for most languages. vbastudio works
+        around this by rewriting the target procedure before running it, in a throwaway
+        shadow copy of your workbook so your real file is never touched mid-run.
+      </p>
+      <p>
+        Every executable line in the procedure you launch gets a call to
+        <code>Agent.Probe</code> inserted before it. That call POSTs the current line number
+        and every local variable's value to a small HTTP server the broker runs — and
+        because that POST blocks synchronously until the broker responds, the blocking call
+        <em>is</em> the breakpoint. If you haven't set a breakpoint on that line, the server
+        responds immediately and execution continues at full speed. If you have, the server
+        holds the response until you click Continue in VS Code. The VBA thread never knows
+        the difference between the two.
+      </p>
+      <p>
+        This only instruments the one procedure you launch — calls it makes to other
+        procedures run un-instrumented, at full speed. See
+        <a href="#capabilities">Capabilities &amp; limitations</a> for what that means in
+        practice.
+      </p>
+
+      <h2 id="instrumentation-rules">Instrumentation rules</h2>
+      <p>
+        <code>VbaStudio.Core/Instrumentation/Instrumenter.cs</code> rewrites the target
+        procedure one physical line at a time. The rules below are exact — each one exists
+        because of a specific way VBA breaks if you probe naively:
+      </p>
+      <ul>
+        <li>
+          <strong>Line continuations are joined first.</strong> A statement split across
+          several physical lines with a trailing <code>" _"</code> is treated as one atomic
+          unit — a probe is never inserted mid-continuation, and a single-line
+          <code>If x Then y</code> is already atomic, so it needs no special case.
+        </li>
+        <li>
+          <strong><code>With</code>/<code>End With</code> blocks are skipped entirely.</strong>
+          The <code>With</code> and <code>End With</code> lines themselves get no probe, and
+          nothing inside the block does either (tracked via a <code>withDepth</code> counter,
+          so nested <code>With</code> blocks are handled correctly). The instrumenter has no
+          expression evaluator, so it cannot resolve the <code>With</code> target to show it
+          — skipping the block is preferred over showing wrong or partial data.
+        </li>
+        <li>
+          <strong>The line right after <code>Select Case &lt;expr&gt;</code> is suppressed.</strong>
+          VBA treats any statement between <code>Select Case</code> and its first
+          <code>Case</code> clause as a hard compile error. The <code>Select Case</code> line
+          itself is still probed normally; only the following line — guaranteed by valid VBA
+          syntax to be the first <code>Case</code> — is skipped.
+        </li>
+        <li>
+          <strong>A probe is suppressed after a line that ends with a continuation marker
+          inside a comment.</strong> Whether VBA treats a trailing <code>" _"</code> inside a
+          comment as continuing that comment onto the next line is genuinely ambiguous — the
+          instrumenter could not confirm it empirically — so it suppresses defensively rather
+          than risk a probe call being silently swallowed into a continued comment and never
+          firing.
+        </li>
+        <li>
+          <strong>Only variables already in scope are captured.</strong> Parameters are valid
+          from procedure entry; a local is only added to the capture list once its own
+          <code>Dim</code>/<code>Static</code>/<code>Const</code> line has been passed, because
+          <code>Option Explicit</code> makes VBA reject a forward reference to a not-yet-declared
+          local as a compile error — confirmed live against real Excel during development.
+        </li>
+        <li>
+          <strong>Only the single launched procedure is rewritten.</strong> Calls it makes to
+          other procedures are not followed or instrumented — see
+          <a href="#capabilities">Capabilities &amp; limitations</a>.
+        </li>
+      </ul>
+
+      <h2 id="probe-protocol">Agent.Probe wire protocol</h2>
+      <p>
+        Each inserted call looks like <code>Agent.Probe 7, Array("x", x, "total", total)</code>
+        — a globally unique integer ID (assigned sequentially across the whole instrumentation
+        run) and a flat <code>Variant</code> array alternating each in-scope symbol's name and
+        its current value, in parameter-then-locals declaration order. <code>Agent.Probe</code>
+        itself lives in <code>vba/modAgent.bas</code>, injected into the shadow workbook as a
+        module named <code>Agent</code> before the run starts.
+      </p>
+      <p>On every call, <code>Probe</code> builds this JSON body and POSTs it synchronously:</p>
+      <div class="code-block">
+        <pre><code>POST http://localhost:8731/probe/
+Content-Type: application/json
+
+{"probe_id":7,"vars":[{"n":"x","t":"Long","v":"3"},{"n":"total","t":"Long","v":"9"}]}</code></pre>
+      </div>
+      <p>
+        <code>t</code> comes from VBA's own <code>TypeName()</code>. Object and array values are
+        not serialized by value — they come through as <code>&lt;obj:ClassName&gt;</code> or
+        <code>&lt;array:TypeName&gt;</code> placeholders, since the probe has no generic way to
+        stringify either. The HTTP call uses <code>WinHttpRequest</code> with its send timeout
+        set to 0 (infinite) — this is what makes the call block for as long as you're paused
+        on that line, however long that is.
+      </p>
+      <p>
+        <code>VbaStudio.Core/Debug/ProbeServer.cs</code> is the other end: a background-thread
+        <code>HttpListener</code> that parses the body, resolves <code>probe_id</code> back to
+        its source module and line number via the instrumenter's own site map, and calls a
+        delegate that decides <code>Continue</code> or <code>Abort</code>. The response is one
+        of exactly two shapes:
+      </p>
+      <div class="code-block">
+        <pre><code>{"cmd":"continue"}
+{"cmd":"abort"}</code></pre>
+      </div>
+      <figure class="diagram">
+        <svg viewBox="0 0 920 300" role="img" aria-labelledby="seq-diagram-title">
+          <title id="seq-diagram-title">Sequence of a single probe call, from VBA line execution to VS Code stepping past a breakpoint</title>
+          <defs>
+            <marker id="arrowSeqA" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" style="fill:var(--current-line)"></path>
+            </marker>
+            <marker id="arrowSeqB" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <path d="M0,0 L8,4 L0,8 Z" style="fill:var(--accent-code)"></path>
+            </marker>
+          </defs>
+
+          <!-- lifelines -->
+          <text x="90" y="24" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">VBA thread</text>
+          <line x1="90" y1="34" x2="90" y2="280" style="stroke:var(--border-bright);stroke-width:1"></line>
+
+          <text x="450" y="24" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">ProbeServer</text>
+          <line x1="450" y1="34" x2="450" y2="280" style="stroke:var(--border-bright);stroke-width:1"></line>
+
+          <text x="800" y="24" text-anchor="middle" style="fill:var(--text-faint);font-size:12px;letter-spacing:.06em;text-transform:uppercase">VS Code / DapSession</text>
+          <line x1="800" y1="34" x2="800" y2="280" style="stroke:var(--border-bright);stroke-width:1"></line>
+
+          <!-- step 1: reaches probed line -->
+          <text x="90" y="62" text-anchor="middle" style="fill:var(--text-muted);font-size:11px">reaches probed line</text>
+
+          <!-- step 2: blocking POST -->
+          <line x1="90" y1="80" x2="445" y2="80" style="stroke:var(--current-line);stroke-width:2" marker-end="url(#arrowSeqA)"></line>
+          <text x="270" y="72" text-anchor="middle" style="fill:var(--current-line);font-size:11px">Agent.Probe: blocking POST /probe/</text>
+          <rect x="80" y="86" width="20" height="120" style="fill:var(--current-line);opacity:.18"></rect>
+          <text x="90" y="215" text-anchor="middle" style="fill:var(--text-faint);font-size:10px">(thread parked)</text>
+
+          <!-- step 3: probe server -> stopped event, if bp set -->
+          <line x1="450" y1="105" x2="795" y2="105" style="stroke:var(--accent-code);stroke-width:2" marker-end="url(#arrowSeqB)"></line>
+          <text x="622" y="97" text-anchor="middle" style="fill:var(--accent-code);font-size:11px">DAP "stopped" event (reason: breakpoint)</text>
+          <rect x="795" y="111" width="10" height="70" style="fill:var(--accent-code);opacity:.18"></rect>
+
+          <!-- step 4: user inspects -->
+          <text x="800" y="140" text-anchor="middle" style="fill:var(--text-muted);font-size:11px">locals shown,</text>
+          <text x="800" y="155" text-anchor="middle" style="fill:var(--text-muted);font-size:11px">user clicks Continue</text>
+
+          <!-- step 5: continue request -->
+          <line x1="795" y1="185" x2="455" y2="185" style="stroke:var(--accent-code);stroke-width:2" marker-end="url(#arrowSeqB)"></line>
+          <text x="622" y="177" text-anchor="middle" style="fill:var(--accent-code);font-size:11px">"continue" request</text>
+
+          <!-- step 6: HTTP response resumes VBA -->
+          <line x1="445" y1="230" x2="100" y2="230" style="stroke:var(--current-line);stroke-width:2" marker-end="url(#arrowSeqA)"></line>
+          <text x="270" y="222" text-anchor="middle" style="fill:var(--current-line);font-size:11px">HTTP 200 {"cmd":"continue"} — line resumes</text>
+
+          <text x="90" y="260" text-anchor="middle" style="fill:var(--text-muted);font-size:11px">executes next line...</text>
+        </svg>
+      </figure>
+      <p class="diagram-caption">
+        No breakpoint on the line: ProbeServer answers immediately and this whole sequence
+        collapses to a few microseconds. A breakpoint is what makes it wait for a human.
+      </p>
+      <p>
+        <code>Probe</code> raises a VBA error (<code>vbObjectError + 3000</code>) on
+        <code>abort</code>, which is how clicking Stop in VS Code actually halts a running
+        macro — there's no way to interrupt a COM call from the outside, so the interruption
+        has to come from inside the VBA thread itself. An unknown <code>probe_id</code> or
+        malformed JSON body fails closed to <code>abort</code> rather than leaving the VBA
+        thread's blocking HTTP call hanging forever.
+      </p>
+
+      <h2 id="dap-surface">DAP surface</h2>
+      <p>
+        <code>VbaStudio.DapServer</code> speaks a deliberately small slice of the Debug Adapter
+        Protocol over stdin/stdout — enough for VS Code's generic debug UI, nothing more:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Request</th><th>What it does here</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>initialize</code></td><td>Declares capabilities to VS Code. No breakpoint-related capabilities (conditional breakpoints, function breakpoints, etc.) are advertised, since none are implemented.</td></tr>
+          <tr><td><code>launch</code></td><td>Resolves the target module/procedure, instruments it, creates the shadow workbook, starts the probe server, and — once everything is ready to accept breakpoints — sends the <code>initialized</code> event.</td></tr>
+          <tr><td><code>setBreakpoints</code></td><td>Verifies each requested line against the instrumented procedure's actual probe sites and reports back which ones are real (see <code>BreakpointVerifier</code>).</td></tr>
+          <tr><td><code>configurationDone</code></td><td>Signals VS Code has finished sending its initial breakpoints; the macro run actually starts here.</td></tr>
+          <tr><td><code>threads</code></td><td>Reports a single, fixed thread — VBA is single-threaded, so this is always a one-entry list.</td></tr>
+          <tr><td><code>stackTrace</code></td><td>Reports one frame: the current probe's module and line. No call-stack frames beyond it, since only one procedure is ever instrumented.</td></tr>
+          <tr><td><code>scopes</code></td><td>Reports a single Locals scope, backed by the current probe event's variable list.</td></tr>
+          <tr><td><code>variables</code></td><td>Returns the name/type/value triples captured at the current probe.</td></tr>
+          <tr><td><code>continue</code></td><td>Resolves the probe server's pending <code>Continue</code> response, letting the blocked VBA thread proceed.</td></tr>
+          <tr><td><code>disconnect</code> / <code>terminate</code></td><td>Resolves the probe server's pending response as <code>Abort</code>, then tears down the shadow workbook.</td></tr>
+        </tbody>
+      </table>
+      <p>Events sent back to VS Code:</p>
+      <table>
+        <thead>
+          <tr><th>Event</th><th>When</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>initialized</code></td><td>End of <code>launch</code> handling, after breakpoint sites exist to verify against — not on <code>initialize</code>, which would race the client's first <code>setBreakpoints</code> call against a session that isn't ready yet.</td></tr>
+          <tr><td><code>stopped</code></td><td>A probe with an active breakpoint blocks; reason is always <code>"breakpoint"</code>.</td></tr>
+          <tr><td><code>output</code></td><td>Console/stderr lines from the broker surfaced into VS Code's Debug Console.</td></tr>
+          <tr><td><code>terminated</code></td><td>The run finished, failed, or was aborted.</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Requests this DAP server does <strong>not</strong> implement: <code>next</code>/<code>stepIn</code>/<code>stepOut</code>
+        (stepping), <code>evaluate</code> (watch/hover expressions), and function or conditional
+        breakpoints. See <a href="#capabilities">Capabilities &amp; limitations</a>.
+      </p>
+
+      <h2 id="cli-contracts">CLI mode contracts</h2>
+      <p>
+        Outside the DAP loop, <code>VbaStudio.DapServer.exe</code> also runs as a one-shot CLI —
+        this is what the extension actually shells out to for the sidebar tree, the pickers, and
+        sync. Each mode attaches to the already-running Excel instance, requires an active
+        workbook, prints one JSON line to stdout, and exits — a non-zero exit with a stderr
+        line means it failed (no active workbook, no running Excel, or a COM error).
+      </p>
+      <p><code>VbaStudio.DapServer.exe list</code></p>
+      <div class="code-block">
+        <pre><code>{"workbookPath":"C:\\...\\Reporting.xlsm","modules":[{"name":"modWork","procedures":["First","Second"]}]}</code></pre>
+      </div>
+      <p>
+        Only standard modules, only <code>Public</code> <code>Sub</code>/<code>Function</code>
+        procedures where every parameter is optional (see
+        <a href="#capabilities">Capabilities &amp; limitations</a>).
+      </p>
+
+      <p><code>VbaStudio.DapServer.exe pull</code></p>
+      <div class="code-block">
+        <pre><code>{"success":true,"srcDir":"C:\\...\\src"}</code></pre>
+      </div>
+      <p>
+        Exports every module to
+        <code>&lt;workbookDir&gt;/src/&lt;Kind folder&gt;/&lt;name&gt;.&lt;ext&gt;</code>.
+      </p>
+
+      <p><code>VbaStudio.DapServer.exe push</code></p>
+      <div class="code-block">
+        <pre><code>{"success":true}</code></pre>
+      </div>
+      <p>Writes every changed disk file back into the live VBA project.</p>
+
+      <p><code>VbaStudio.DapServer.exe stale &lt;moduleName&gt;</code></p>
+      <div class="code-block">
+        <pre><code>{"stale":true}
+{"stale":false}</code></pre>
+      </div>
+      <p>
+        Compares Excel's current code for that module against the corresponding disk file. A
+        module Excel no longer has (renamed or deleted since the last pull) is reported stale
+        rather than erroring.
+      </p>
+      <p>
+        Anything else in <code>args[0]</code> — a typo, or <code>stale</code> with no module name —
+        exits 2 immediately rather than falling through to the DAP loop, which blocks on stdin
+        forever and would otherwise just hang.
+      </p>
+
+      <h2 id="module-encoding">Module kinds &amp; encoding</h2>
+      <p>
+        Every module read from the VBA project is classified into one of four kinds, which
+        determines both where it lives under <code>src/</code> and which encoding round-trips it
+        without corruption:
+      </p>
+      <table>
+        <thead>
+          <tr><th>Kind</th><th>Extension</th><th>Folder</th><th>Encoding</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Standard</td><td><code>.bas</code></td><td><code>Modules/</code></td><td>Windows-1252</td></tr>
+          <tr><td>Class</td><td><code>.cls</code></td><td><code>Classes/</code></td><td>Windows-1252</td></tr>
+          <tr><td>UserForm</td><td><code>.frm</code></td><td><code>Forms/</code></td><td>Windows-1252</td></tr>
+          <tr><td>Document (sheet/workbook code-behind)</td><td><code>.cls</code></td><td><code>Sheets/</code></td><td>UTF-8, no BOM</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Document modules get UTF-8 instead of Windows-1252 because they're conventionally kept in
+        version control alongside the rest of a modern codebase and diff more predictably that
+        way; every other kind uses Windows-1252 to match what the VBE itself writes and reads,
+        since that's the encoding <code>.Export()</code>/<code>.AddFromFile()</code> actually use
+        under the hood.
+      </p>
+      <p>
+        Because Pull and Push move a module's <strong>entire</strong> source text — not a parsed
+        and regenerated version of it — attribute lines like <code>Attribute VB_PredeclaredId</code>
+        (default-instance classes) and <code>Attribute VB_UserMemId = 0</code> (default members,
+        <code>For Each</code> enumerators) survive a round trip unchanged, because they're just
+        more text in the file being copied. <code>VbaStudio.Tests/Sync/RoundTripCorpusTests.cs</code>
+        asserts this directly against fixture classes with a predeclared ID, a default member, and
+        a custom enumerator.
+      </p>
+
+      <h2 id="project-layout">Project layout</h2>
+      <table>
+        <thead>
+          <tr><th>Path</th><th>What's there</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>VbaStudio.Core/</code></td><td>Parsing, instrumentation, sync engine, models — pure C#, no COM, unit-tested.</td></tr>
+          <tr><td><code>VbaStudio.Interop/</code></td><td>COM automation: <code>Runner</code>, <code>ExcelVbaProjectAccess</code>, <code>DebugSession</code>, the shadow-workbook logic.</td></tr>
+          <tr><td><code>VbaStudio.DapServer/</code></td><td>The DAP server and CLI modes (<code>list</code>/<code>pull</code>/<code>push</code>/<code>stale</code>) — what the extension actually launches and talks to.</td></tr>
+          <tr><td><code>VbaStudio.Tests/</code></td><td>Unit tests, covering the COM-free pieces in <code>VbaStudio.Core</code>.</td></tr>
+          <tr><td><code>vba/</code></td><td>The <code>Agent.Probe</code> VBA source, injected into the shadow workbook at debug time.</td></tr>
+          <tr><td><code>extension/</code></td><td>The VS Code extension: DAP client registration, sidebar tree, sync commands.</td></tr>
+        </tbody>
+      </table>
+
+      <h2 id="building-vbastudio">Building vbastudio itself</h2>
+      <p>
+        Contributing needs a different build than <a href="#build-broker">Build the broker</a>
+        above, which only covers producing a working <code>.exe</code>. Working on vbastudio's
+        own source splits into a fast, COM-free loop and a slow, COM-dependent one:
+      </p>
+      <ul>
+        <li>
+          <strong><code>VbaStudio.Core</code> and <code>VbaStudio.Tests</code></strong> reference
+          no COM interop at all — the parser, instrumenter, sync engine, and probe server are
+          pure C#. These build and test with the plain SDK CLI:
+        </li>
+      </ul>
+      <div class="code-block">
+        <pre><code>dotnet test VbaStudio.Tests</code></pre>
+      </div>
+      <ul>
+        <li>
+          <strong><code>VbaStudio.Interop</code>, <code>VbaStudio.DapServer</code>, and
+          <code>VbaStudio.Spike</code></strong> carry COM references
+          (<code>Microsoft.Office.Interop.Excel</code>, <code>Microsoft.Vbe.Interop</code>) that
+          only resolve through full MSBuild — <code>dotnet build</code> fails on these three.
+          Use the same command as <a href="#build-broker">Build the broker</a>:
+        </li>
+      </ul>
+      <div class="code-block">
+        <pre><code>"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe" VbaStudio.sln /p:Configuration=Debug /m</code></pre>
+      </div>
+      <ul>
+        <li>
+          <strong>The extension</strong> is a standalone TypeScript project under
+          <code>extension/</code>:
+        </li>
+      </ul>
+      <div class="code-block">
+        <pre><code>npm install
+npm run compile</code></pre>
+      </div>
+      <p>
+        There is no automated end-to-end test that drives real Excel — every COM-touching path
+        (<code>Runner</code>, <code>ExcelVbaProjectAccess</code>, <code>ExcelShadowWorkbook</code>,
+        <code>DebugSession</code>) is verified by hand against a running Excel instance, not by
+        CI. If you change anything under <code>VbaStudio.Interop/</code>, plan to rebuild and
+        manually re-run a debug session against a real workbook before calling it done.
+      </p>
+
+      <h2 id="capabilities">Capabilities &amp; limitations</h2>
+      <p>What works today:</p>
+      <ul>
+        <li>Real breakpoints and captured locals for any <code>Sub</code> or <code>Function</code> you launch directly.</li>
+        <li>Two-way sync between Excel and disk, with a stale-before-run guard, conflict detection (both sides changed since the last sync are flagged, never silently overwritten), and delete propagation in both directions.</li>
+        <li>Standard, class, document, and UserForm modules can all be pulled and pushed, including class attribute lines like <code>VB_PredeclaredId</code> and <code>VB_UserMemId</code> (see <a href="#module-encoding">Module kinds &amp; encoding</a>).</li>
+      </ul>
+      <p>What doesn't, yet — each of these is a real, known gap, not a hypothetical one:</p>
+      <ul>
+        <li><strong>No call-chain debugging.</strong> Only the procedure you launch is instrumented — anything it calls runs un-instrumented, at full speed, with no breakpoints inside it. See <a href="#instrumentation-rules">Instrumentation rules</a>.</li>
+        <li><strong>No stepping, watch expressions, function breakpoints, or conditional breakpoints.</strong> The instrumenter already places a probe on every line and the DAP server has no handlers for <code>next</code>/<code>stepIn</code>/<code>stepOut</code>/<code>evaluate</code> — see <a href="#dap-surface">DAP surface</a>. Wiring stepping up is mostly plumbing at this point, not a design problem.</li>
+        <li><strong><code>Debug.Print</code> still goes to the VBE's own Immediate Window</strong>, not to VS Code's Debug Console. Capturing it is an open problem — the Immediate Window isn't automatable the way dialogs are — and is explicitly deferred as a future spike, not started.</li>
+        <li><strong>Only <code>Public</code> <code>Sub</code>/<code>Function</code> procedures in standard modules whose parameters are all optional can be launched directly.</strong> <code>ModuleListBuilder</code> filters the picker to these because <code>Application.Run("Module.Procedure")</code> — the only mechanism vbastudio launches through — cannot call a class member, cannot supply arguments, cannot address a <code>Property</code> at all, and per Microsoft's own documentation must target a <code>Public</code> procedure. Listing anything outside this filter produces a real, reproduced <code>DISP_E_PARAMNOTOPTIONAL</code> from <code>Application.Run</code> itself. Wrap what you want to debug in a small <code>Public</code>, parameterless (or all-optional-parameter) <code>Sub</code> if you need to reach it.</li>
+        <li><strong><code>IsMacroRunning</code> is a hardcoded stub.</strong> <code>ExcelVbaProjectAccess.IsMacroRunning</code> always returns <code>false</code>; the guard that should block a Push while a macro is actively running does not actually detect that condition yet. This is a deliberate, accepted gap, not an oversight.</li>
+        <li><strong><code>VBProject.Mode</code> is an unreliable "still running" signal in this VBE version.</strong> <code>Runner</code> logs (does not block on) a warning when the project isn't reporting design mode before or after a run. This was downgraded from a hard precondition after live testing showed the mode reading stuck at <code>Break</code> (raw value 2) even after <code>Run &gt; Reset</code>, while <code>Application.Run</code> kept succeeding cleanly and repeatedly regardless — the warning is worth reading, but not proof anything is actually wrong.</li>
+        <li><strong>Windows and Excel only.</strong> This drives a real, local Excel process over COM automation — there is no cross-platform path.</li>
+        <li><strong>The probe listener is unauthenticated.</strong> <code>ProbeServer</code> binds only to <code>http://localhost:8731/probe/</code> (loopback, never reachable from the network), but while a debug session is active, any other process running as you on the same machine could reach that endpoint — same trust boundary as any local debugger. There is no telemetry and no network activity beyond that loopback connection.</li>
+      </ul>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <div class="callout">
+        <div class="callout-title">"Object doesn't support this property or method" / permission errors</div>
+        <p>Almost always the Trust Center setting above. Double-check "Trust access to the VBA project object model" is on, then fully close and reopen Excel.</p>
+      </div>
+      <div class="callout">
+        <div class="callout-title">MSBuild fails with a COM reference error</div>
+        <p>You're likely using <code>dotnet build</code> instead of full MSBuild, or your Visual Studio install is missing the .NET desktop development workload. The broker's COM references only resolve through full MSBuild.</p>
+      </div>
+      <div class="callout">
+        <div class="callout-title">"The target VBA project is not the active project"</div>
+        <p>Make the workbook the active window in Excel before running or debugging — vbastudio always targets whichever workbook currently has focus.</p>
+      </div>
+
+    </main>
+
+    <aside class="docs-toc" aria-label="On this page">
+      <div class="docs-toc-title">On this page</div>
+      <a href="#getting-started">Getting started</a>
+      <a href="#prerequisites">Prerequisites</a>
+      <a href="#build-broker">Build the broker</a>
+      <a href="#build-extension">Build the extension</a>
+      <a href="#install-extension">Install the extension</a>
+      <a href="#configure">Configure</a>
+      <a href="#open-workbook">Open your workbook</a>
+      <a href="#pull-code">Pull your code</a>
+      <a href="#run-debug">Run or debug</a>
+      <a href="#sync">Sync &amp; stale</a>
+      <a href="#commands">Commands</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#how-debugging-works">How debugging works</a>
+      <a href="#instrumentation-rules">Instrumentation rules</a>
+      <a href="#probe-protocol">Probe wire protocol</a>
+      <a href="#dap-surface">DAP surface</a>
+      <a href="#cli-contracts">CLI mode contracts</a>
+      <a href="#module-encoding">Module kinds &amp; encoding</a>
+      <a href="#project-layout">Project layout</a>
+      <a href="#building-vbastudio">Building vbastudio itself</a>
+      <a href="#capabilities">Capabilities &amp; limitations</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+    </aside>
+  </div>
+</div>
+
+<footer>
+  <div class="container">
+    <span>vbastudio — an external IDE for Excel VBA.</span>
+    <span><a href="index.html">Back to overview</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Copy-to-clipboard buttons on every code block.
+  document.querySelectorAll(".code-block").forEach(function (block) {
+    var codeEl = block.querySelector("code");
+    if (!codeEl) return;
+    var btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", function () {
+      navigator.clipboard.writeText(codeEl.textContent).then(function () {
+        btn.textContent = "Copied";
+        btn.classList.add("copied");
+        setTimeout(function () {
+          btn.textContent = "Copy";
+          btn.classList.remove("copied");
+        }, 1500);
+      });
+    });
+    block.appendChild(btn);
+  });
+
+  // Scrollspy: highlight the current section in the sidebar and "on this page" nav.
+  var sections = Array.prototype.slice.call(document.querySelectorAll(".docs-content h2[id]"));
+  var navLinks = document.querySelectorAll(".docs-sidebar a, .docs-toc a");
+  if (sections.length && "IntersectionObserver" in window) {
+    var current = null;
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            current = entry.target.id;
+          }
+        });
+        navLinks.forEach(function (a) {
+          a.classList.toggle("active", a.getAttribute("href") === "#" + current);
+        });
+      },
+      { rootMargin: "-84px 0px -70% 0px" }
+    );
+    sections.forEach(function (s) { observer.observe(s); });
+  }
+})();
+</script>
+
+</body>
+</html>

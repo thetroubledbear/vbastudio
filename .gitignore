@@ -32,5 +32,4 @@ Thumbs.db
 docs/superpowers/
 .superpowers/
 
-# Site source - built and published separately, not part of the source repo
-website/
+
