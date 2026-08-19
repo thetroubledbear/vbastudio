@@ -1,9 +1,19 @@
 // extension/src/extension.ts
+import * as path from "path";
 import * as vscode from "vscode";
 import { ensureServerPath, getDapServerPath, promptToBrowseForServer } from "./config";
 import { configureLaunch, goToProcedure, writeLaunchConfig } from "./configureLaunch";
-import { ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
+import { ModuleNode, ModuleTreeProvider, ProcedureNode } from "./moduleTreeProvider";
 import { confirmStaleOrProceed, pullModules, pushModules } from "./sync";
+
+// The Modules tree only ever lists Standard modules (ModuleListBuilder.Build filters to
+// ModuleKind.Standard - Application.Run can't target Class/Form/Document members), so the
+// "Modules" folder and ".bas" extension are always correct here without needing the kind back
+// from the server. DapSession's own srcDir convention (<workbookDir>/src/<Kind>/<Name>.ext) is
+// the same one SyncEngine's pull writes to.
+function moduleSourcePath(workbookPath: string, moduleName: string): string {
+  return path.join(path.dirname(workbookPath), "src", "Modules", `${moduleName}.bas`);
+}
 
 export function activate(context: vscode.ExtensionContext) {
   const treeProvider = new ModuleTreeProvider();
@@ -54,6 +64,21 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.commands.registerCommand("vbastudio.pushModules", () => pushModules()),
+    vscode.commands.registerCommand(
+      "vbastudio.openModuleSource",
+      async (node: ModuleNode | ProcedureNode) => {
+        const moduleName = node.kind === "module" ? node.name : node.moduleName;
+        const filePath = moduleSourcePath(node.workbookPath, moduleName);
+        try {
+          const document = await vscode.workspace.openTextDocument(filePath);
+          await vscode.window.showTextDocument(document, { preview: false });
+        } catch (err: any) {
+          vscode.window.showErrorMessage(
+            `Could not open "${filePath}". Pull modules first (VbaStudio: Pull Modules from Excel) if it hasn't been synced to disk yet.`
+          );
+        }
+      }
+    ),
     vscode.commands.registerCommand(
       "vbastudio.runProcedureFromTree",
       async (node: ProcedureNode) => {

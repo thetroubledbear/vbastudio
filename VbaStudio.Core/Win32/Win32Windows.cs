@@ -34,7 +34,19 @@ public sealed class Win32Windows : IWin32Windows
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    // keybd_event, not SendInput: this process injects exactly one fixed key combo into whatever
+    // window currently has focus - SendInput's richer (and more boilerplate-heavy) INPUT-array API
+    // buys nothing here that keybd_event doesn't already do in four calls.
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
     private const uint BM_CLICK = 0x00F5;
+    private const byte VK_CONTROL = 0x11;
+    private const byte VK_CANCEL = 0x03; // Ctrl+Break's virtual-key code - distinct from VK_PAUSE (0x13).
+    private const uint KEYEVENTF_KEYUP = 0x0002;
 
     public IReadOnlyList<IntPtr> EnumerateTopLevelWindows()
     {
@@ -89,5 +101,14 @@ public sealed class Win32Windows : IWin32Windows
         }
 
         return true;
+    }
+
+    public void SendCtrlBreak(IntPtr targetWindow)
+    {
+        SetForegroundWindow(targetWindow);
+        keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_CANCEL, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_CANCEL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 }

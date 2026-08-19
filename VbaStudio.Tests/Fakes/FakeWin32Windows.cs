@@ -20,8 +20,10 @@ public sealed class FakeWin32Windows : IWin32Windows
     private readonly List<IntPtr> _topLevel = new();
     private readonly List<IntPtr> _clickedHandles = new();
     private readonly HashSet<IntPtr> _neverCloses = new();
+    private readonly List<IntPtr> _ctrlBreakTargets = new();
 
     public IReadOnlyList<IntPtr> ClickedHandles => _clickedHandles;
+    public IReadOnlyList<IntPtr> CtrlBreakTargets => _ctrlBreakTargets;
 
     /// <summary>Makes WaitForWindowClosed report the window still open until the timeout elapses.</summary>
     public void MarkNeverCloses(IntPtr hwnd) => _neverCloses.Add(hwnd);
@@ -52,4 +54,6 @@ public sealed class FakeWin32Windows : IWin32Windows
     public void Click(IntPtr hwndButton) => _clickedHandles.Add(hwndButton);
 
     public bool WaitForWindowClosed(IntPtr hwnd, TimeSpan timeout) => !_neverCloses.Contains(hwnd);
+
+    public void SendCtrlBreak(IntPtr targetWindow) => _ctrlBreakTargets.Add(targetWindow);
 }

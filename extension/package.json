@@ -58,6 +58,18 @@
           "when": "view == vbastudioModules",
           "group": "navigation"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "vbastudio.openModuleSource",
+          "when": "view == vbastudioModules && (viewItem == vbastudioModule || viewItem == vbastudioProcedure)",
+          "group": "inline"
+        },
+        {
+          "command": "vbastudio.openModuleSource",
+          "when": "view == vbastudioModules && (viewItem == vbastudioModule || viewItem == vbastudioProcedure)",
+          "group": "navigation"
+        }
       ]
     },
     "commands": [
@@ -87,6 +99,11 @@
         "command": "vbastudio.pushModules",
         "title": "VbaStudio: Push Modules to Excel",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "vbastudio.openModuleSource",
+        "title": "VbaStudio: Open Source",
+        "icon": "$(go-to-file)"
       }
     ],
     "configuration": {

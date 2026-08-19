@@ -32,4 +32,6 @@ Thumbs.db
 docs/superpowers/
 .superpowers/
 
-
+#graphify
+graphify-out/
+.claude/

@@ -10,6 +10,7 @@ using VbaStudio.Core.Debug;
 using VbaStudio.Core.Instrumentation;
 using VbaStudio.Core.Model;
 using VbaStudio.Core.Parsing;
+using VbaStudio.Core.Win32;
 using VbaStudio.Interop;
 using Excel = Microsoft.Office.Interop.Excel;
 
@@ -26,6 +27,7 @@ public sealed class DapSession
     private readonly string _shadowPath;
     private readonly Stream _output;
     private readonly object _outputLock = new();
+    private readonly IWin32Windows _windows = new Win32Windows();
     private int _nextSeq = 1;
 
     private string? _launchModule;
@@ -33,11 +35,15 @@ public sealed class DapSession
     private bool _running;
     private IReadOnlyDictionary<string, string> _moduleFilePaths = new Dictionary<string, string>();
     private IReadOnlyList<ProbeSite> _launchProbeSites = Array.Empty<ProbeSite>();
+    private DapRequestReader? _reader;
 
     private readonly object _breakpointsLock = new();
     private readonly HashSet<(string Module, int Line)> _breakpoints = new();
 
-    private ProbeEvent? _currentProbe;
+    // Read by DapRequestReader's own background thread (to decide whether a "disconnect"/
+    // "terminate" needs the immediate Ctrl+Break path) concurrently with writes from OnProbe on
+    // ProbeServer's callback thread - volatile keeps that check honest across threads.
+    private volatile ProbeEvent? _currentProbe;
 
     public DapSession(Excel.Application excel, Excel.Workbook workbook, string shadowPath, Stream output)
     {
@@ -60,18 +66,27 @@ public sealed class DapSession
     // hop entirely (this is NOT a "never touch a second thread" rule - ProbeServer's own
     // pre-existing callback thread, and DialogWatcher's polling thread, both already run
     // concurrently with Application.Run without issue, since neither makes a blocking call INTO
-    // the STA thread's own RCWs while that thread sits non-pumping).
-    // So the whole session - reading DAP requests before the run starts, running
-    // DebugSession.Run, and reading further DAP requests (stackTrace/scopes/variables/continue)
-    // while a probe is paused mid-run via OnProbe's own nested read loop below - all happens on
-    // this one thread. This exactly mirrors VbaStudio.Spike's own already-proven-live `debug`
-    // console mode, which reads Console.ReadLine() synchronously inside its onProbe callback on
-    // ProbeServer's callback thread - never a second, independently-spawned thread.
+    // the STA thread's own RCWs while that thread sits non-pumping). DapRequestReader's own
+    // background thread (below) follows the same rule: it only ever does raw stream IO on
+    // `input`, never a COM call, so it is safe to run concurrently with Application.Run too -
+    // every actual request handler (HandleRequest, OnProbe's body) still only ever runs on
+    // whichever thread dequeues it via _reader.Read(): this STA thread before the run starts, or
+    // ProbeServer's callback thread while a probe is paused mid-run (OnProbe's own loop below).
+    // This exactly mirrors VbaStudio.Spike's own already-proven-live `debug` console mode, which
+    // reads Console.ReadLine() synchronously inside its onProbe callback on ProbeServer's
+    // callback thread - never a thread that also touches _excel/_workbook's COM objects.
     public void RunMessageLoop(Stream input)
     {
+        // One reader thread for the whole session, started here and never restarted - both this
+        // loop and OnProbe's own paused loop below consume through it via _reader.Read() instead
+        // of touching `input` directly, so a stop request can be caught and acted on immediately
+        // even while the main thread is blocked inside Application.Run. See DapRequestReader.
+        _reader = new DapRequestReader(input, () => _currentProbe != null, HandleStopWhileRunning);
+        _reader.Start();
+
         while (true)
         {
-            var request = DapProtocol.ReadRequest(input);
+            var request = _reader.Read();
             if (request == null)
             {
                 break;
@@ -79,7 +94,7 @@ public sealed class DapSession
 
             if (request.Command == "configurationDone")
             {
-                HandleConfigurationDone(request, input);
+                HandleConfigurationDone(request);
                 break;
             }
 
@@ -92,6 +107,35 @@ public sealed class DapSession
                 SendErrorResponse(request, ex.Message);
             }
         }
+    }
+
+    // Invoked on DapRequestReader's own background thread - concurrently with the main thread
+    // sitting blocked inside Application.Run - whenever "disconnect"/"terminate" arrives while no
+    // breakpoint is currently paused. Nobody else is going to read further input soon, so this
+    // must act immediately rather than queue. Sending the interrupt is pure Win32 key injection,
+    // never a call into any STA-owned COM RCW, so it is safe from a non-owning thread - see the
+    // threading note on RunMessageLoop's own caller and DapRequestReader's doc comment.
+    private void HandleStopWhileRunning(DapRequest request)
+    {
+        _log?.Invoke(
+            $"DapSession: '{request.Command}' received while a procedure is running with no " +
+            "breakpoint paused - sending Ctrl+Break to interrupt Excel.");
+        SendResponse(request, null);
+
+        try
+        {
+            _windows.SendCtrlBreak((IntPtr)_excel.Hwnd);
+        }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"DapSession: failed to send the interrupt signal: {ex.Message}");
+        }
+
+        // Not blocking here for Application.Run to actually return - RunDebugSession's own flow
+        // sends "terminated" once DebugSession.Run does, whether that's because the interrupt
+        // above worked (DialogWatcher, already running, dismisses the resulting "code execution
+        // interrupted" dialog by clicking End) or the procedure simply finished on its own in the
+        // meantime.
     }
 
     private void HandleRequest(DapRequest request)
@@ -118,15 +162,12 @@ public sealed class DapSession
                 break;
             case "disconnect":
             case "terminate":
-                // Only meaningful here if it arrives before configurationDone (nothing is running
-                // yet). Once running, disconnect/terminate is intercepted inline by OnProbe's own
-                // read loop, but only while a probe is actually paused - see OnProbe below. If the
-                // client disconnects while the procedure is running but no breakpoint is currently
-                // hit, nobody is reading stdin at that moment (this thread is blocked inside
-                // Application.Run) - the message sits unread until the next pause or until the run
-                // finishes on its own. Accepted for M6a's scope (exit gate is "breakpoint,
-                // variables pane", not mid-flight cancellation); a real client would time out and
-                // kill the process rather than hang indefinitely.
+                // Reached here only if it arrives before configurationDone - nothing is running
+                // yet. While paused at a breakpoint, OnProbe's own loop intercepts disconnect/
+                // terminate before calling HandleRequest (see OnProbe below). Once running with
+                // no breakpoint paused, DapRequestReader routes it to HandleStopWhileRunning
+                // instead of ever reaching here, since nothing on this thread will call Read()
+                // again until the blocking Application.Run call returns.
                 SendResponse(request, null);
                 break;
             case "stackTrace":
@@ -264,14 +305,14 @@ public sealed class DapSession
         SendResponse(request, new ThreadsResponseBody(new[] { new DapThread(ThreadId, "Main") }));
     }
 
-    private void HandleConfigurationDone(DapRequest request, Stream input)
+    private void HandleConfigurationDone(DapRequest request)
     {
         _running = true;
         SendResponse(request, null);
-        RunDebugSession(input);
+        RunDebugSession();
     }
 
-    private void RunDebugSession(Stream input)
+    private void RunDebugSession()
     {
         // An unhandled exception here would crash the entire process - confirmed the hard way in
         // M5b's own Task 1 fix (ProbeServer's response-write path). Never let a session failure
@@ -281,7 +322,7 @@ public sealed class DapSession
             var debugSession = new DebugSession();
             var result = debugSession.Run(
                 _excel, _workbook, _shadowPath, _launchModule!, _launchEntryPoint!,
-                probeEvent => OnProbe(probeEvent, input),
+                OnProbe,
                 log => SendEvent("output", new OutputEventBody("console", log + "\n")));
 
             if (!result.Run.Success)
@@ -307,7 +348,9 @@ public sealed class DapSession
     // When paused at a breakpoint, this reads and answers further DAP requests directly and
     // synchronously - stackTrace/scopes/variables/setBreakpoints - until a continue or
     // disconnect/terminate arrives, at which point it returns control to DebugSession.Run.
-    private ProbeCommand OnProbe(ProbeEvent probeEvent, Stream input)
+    // Reads through _reader.Read() (not the raw input stream) - it is the single dedicated
+    // reader for the whole session; see DapRequestReader and RunMessageLoop.
+    private ProbeCommand OnProbe(ProbeEvent probeEvent)
     {
         bool isBreakpoint;
         lock (_breakpointsLock)
@@ -325,7 +368,7 @@ public sealed class DapSession
 
         while (true)
         {
-            var request = DapProtocol.ReadRequest(input);
+            var request = _reader!.Read();
             if (request == null)
             {
                 _currentProbe = null;

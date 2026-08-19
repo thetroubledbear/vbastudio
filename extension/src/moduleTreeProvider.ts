@@ -57,6 +57,10 @@ export class ModuleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       case "module": {
         const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
         item.description = `${element.procedures.length} procedure${element.procedures.length === 1 ? "" : "s"}`;
+        // Enables the "Open Source" context-menu/inline entry from package.json's
+        // view/item/context contribution (when == vbastudioModule) - single click still just
+        // expands the tree node, so this adds a way to reach the file without changing that.
+        item.contextValue = "vbastudioModule";
         return item;
       }
       case "procedure": {
@@ -67,6 +71,10 @@ export class ModuleTreeProvider implements vscode.TreeDataProvider<TreeNode> {
           title: "Run/Debug",
           arguments: [element],
         };
+        // See the "module" case above - single click still runs the procedure (deliberately, to
+        // avoid the accidental-run risk noted in extension.ts); contextValue only adds the
+        // separate "Open Source" affordance.
+        item.contextValue = "vbastudioProcedure";
         return item;
       }
     }

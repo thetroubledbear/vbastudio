@@ -19,4 +19,13 @@ public interface IWin32Windows
     /// operation's watcher can catch the same dialog still closing and misreport it as fresh.
     /// </summary>
     bool WaitForWindowClosed(IntPtr hwnd, TimeSpan timeout);
+
+    /// <summary>
+    /// Simulates a physical Ctrl+Break key press, after bringing <paramref name="targetWindow"/> to
+    /// the foreground - VBA's own Ctrl+Break interrupt detection (Application.EnableCancelKey) only
+    /// fires while Excel is the active application, mirroring the manual "click into Excel, press
+    /// Esc" experience. Used to force a stop request through to a macro that Application.Run is
+    /// currently blocked inside, with nothing else able to interrupt it - see DapRequestReader.
+    /// </summary>
+    void SendCtrlBreak(IntPtr targetWindow);
 }
