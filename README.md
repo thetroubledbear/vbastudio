@@ -7,8 +7,8 @@ workbook over COM from VS Code — so you get real breakpoints, a real
 Variables pane, and your VBA source as plain text files on disk, under git,
 instead of trapped inside the VBE.
 
-→ **[Full overview and features](website/index.html)**
-→ **[Setup guide — build it and get running](website/install.html)**
+→ **[Full overview and features](docs/index.html)**
+→ **[Setup guide — build it and get running](docs/install.html)**
 
 ## What it does
 
