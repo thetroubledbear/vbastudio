@@ -65,8 +65,7 @@ the blocking calls that implement breakpoints; that endpoint is unauthenticated,
 other process running as you on the same machine could reach it during a session. There
 is no telemetry and no network activity beyond that loopback connection.
 
-Found a security issue? Open a GitHub issue (or a private security advisory, if the repo
-has one enabled) rather than a public pull request with exploit details.
+Found a security issue? Open a GitHub issue rather than a public pull request with exploit details.
 
 ## Trademarks
 
