@@ -39,7 +39,6 @@ assume prior VS Code or .NET experience.
 | `VbaStudio.Tests/` | Unit tests for the broker. |
 | `extension/` | The VS Code extension client. |
 | `vba/` | VBA source injected into the debugged workbook at runtime (the probe agent). |
-| `website/` | This project's site — [overview](website/index.html) and [setup guide](website/install.html). |
 | `docs/` | Design specs and implementation plans written during development. |
 
 ## How it fits together
